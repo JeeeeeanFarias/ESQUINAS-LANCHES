@@ -83,7 +83,7 @@
     if (!cfg) return '';
     if (cfg.logoData) return cfg.logoData;
     if (API.modo === 'online' && cfg.logoV) return '/api/logo?v=' + cfg.logoV;
-    return '';
+    return window.LOGO_PADRAO || 'logo.png';
   }
   function logoHtml(cfg, tam) {
     const src = logoSrc(cfg);
@@ -210,8 +210,8 @@
   const CSS_CARTAO = `
     .cartao{width:100cqw;height:150cqw;background:#F07316;color:#151110;display:flex;flex-direction:column;align-items:center;justify-content:space-between;font-family:'Bricolage Grotesque','Segoe UI',Arial,sans-serif;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;position:relative}
     .cartao .c-topo{display:flex;flex-direction:column;align-items:center;gap:1.5cqw;padding:7cqw 6cqw 0;text-align:center}
-    .cartao .c-logo{height:14cqw;width:14cqw;border-radius:50%;background:#151110;color:#F07316;display:grid;place-items:center;font-weight:800;font-size:9cqw;overflow:hidden}
-    .cartao .c-logo img{width:100%;height:100%;object-fit:contain;background:#fff}
+    .cartao .c-logo{height:24cqw;width:24cqw;border-radius:50%;background:#151110;color:#F07316;display:grid;place-items:center;font-weight:800;font-size:9cqw;overflow:hidden}
+    .cartao .c-logo img{width:100%;height:100%;object-fit:contain}
     .cartao .c-nome{font-weight:800;font-size:6cqw;line-height:1.05;letter-spacing:-.02em}
     .cartao .c-mesa{display:flex;align-items:baseline;gap:3cqw;line-height:.85;padding:2cqw 0 3cqw}
     .cartao .c-mesa span{font-size:7cqw;font-weight:800;letter-spacing:.18em}
@@ -235,7 +235,7 @@
   function cartaoHtml(n) {
     const src = logoSrc(S.cfg);
     return `<div class="cartao">
-      <div class="c-topo"><div class="c-logo">${src ? `<img src="${esc(src)}" alt="">` : esc((S.cfg.nome.trim()[0] || 'L'))}</div><div class="c-nome">${esc(S.cfg.nome)}</div></div>
+      <div class="c-topo"><div class="c-logo">${src ? `<img src="${esc(src)}" alt="">` : esc((S.cfg.nome.trim()[0] || 'L'))}</div>${src ? '' : `<div class="c-nome">${esc(S.cfg.nome)}</div>`}</div>
       <div class="c-mesa"><span>MESA</span><b>${n}</b></div>
       <div class="c-qr">${qrSvg(linkMesa(n))}</div>
       <div class="c-pe"><b>Aponte a câmera do celular</b><span>Veja o cardápio e acompanhe a conta da sua mesa</span></div>
