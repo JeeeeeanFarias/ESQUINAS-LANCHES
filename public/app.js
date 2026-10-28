@@ -74,7 +74,7 @@
   let cliente = null;
   const ui = {
     g: { vista: 'mesas', alvo: null, cart: [], cat: null, sheet: null, conf: null },
-    cx: { tab: 'mesas', sel: null, forma: 'Débito', confFechar: false, edit: null, conf: null },
+    cx: { tab: 'mesas', sel: null, forma: 'Débito', confFechar: false, edit: null, conf: null, cart: [], cat: null },
     previa: null, som: false, offline: false, loginErro: '', carregando: true
   };
 
@@ -124,6 +124,8 @@
     render();
   }
   const contaPorId = (id) => S && S.contas.find((c) => c.id === id);
+  const noBalcao = () => tela === 'caixa' && ui.cx.tab === 'balcao';
+  const carrinho = () => (noBalcao() ? ui.cx.cart : ui.g.cart);
 
   /* ---------- Som e avisos ---------- */
   let actx = null;
@@ -590,10 +592,48 @@
       ${API.modo === 'demo' ? '<div class="bloco"><h2>Demonstração</h2><p class="muted">Apaga os pedidos de teste e volta ao cardápio de exemplo.</p><button class="btn" data-act="zerarDemo">Zerar demonstração</button></div>' : ''}
     </div>`;
   }
+
+  function cxVendaRapida() {
+    const ativos = S.menu.filter((m) => m.ativo);
+    const cats = Array.from(new Set(ativos.map((m) => m.cat)));
+    const cat = cats.includes(ui.cx.cat) ? ui.cx.cat : cats[0];
+    const cart = ui.cx.cart;
+    const tot = Math.round(cart.reduce((a, x) => a + x.qtd * x.preco, 0) * 100) / 100;
+    const qtdDe = (mid) => cart.filter((x) => x.mid === mid).reduce((a, x) => a + x.qtd, 0);
+    const vendas = S.contas.filter((c) => c.rapida && !c.aberta).sort((a, b) => b.fechadaEm - a.fechadaEm).slice(0, 12);
+    return `<div class="cx">
+      <div class="secao">
+        <div class="secao-cab"><h2>Venda rápida no balcão</h2><span class="muted">Toque nos itens. O pagamento é na hora.</span></div>
+        <div class="cats" role="tablist">${cats.map((c) => `<button class="cat ${c === cat ? 'on' : ''}" data-act="cxCat" data-c="${esc(c)}" role="tab" aria-selected="${c === cat}">${esc(c)}</button>`).join('')}</div>
+        <div class="vr-grade">${ativos.filter((m) => m.cat === cat).map((m) => {
+          const q = qtdDe(m.id);
+          return `<button class="prod" data-act="tocarItem" data-m="${m.id}"><span class="n">${esc(m.nome)}${q ? `<span class="noc">${q}</span>` : ''}</span><span class="p">${brl(m.preco)}</span>
+            ${m.sab && m.sab.length ? `<span class="i">${esc(m.sab.join(', '))}</span>` : ''}</button>`;
+        }).join('')}</div>
+        ${vendas.length ? `<section class="secao"><h3>Últimas vendas no balcão</h3><div class="tabela-wrap"><table><thead><tr><th>Hora</th><th>Itens</th><th>Forma</th><th class="d">Total</th><th></th></tr></thead><tbody>
+          ${vendas.map((c) => `<tr><td>${hora(c.fechadaEm)}</td><td>${esc(L.vivos(c).map((i) => i.qtd + '× ' + i.nome).join(', '))}${c.nome && c.nome !== 'Venda rápida' ? `<br><small class="muted">${esc(c.nome)}</small>` : ''}</td><td>${esc(Array.from(new Set(c.pags.map((p) => p.forma))).join(' + ') || '—')}</td><td class="d">${brl(L.total(c))}</td><td><button class="btn mini" data-act="imprimirConta" data-c="${c.id}">Imprimir</button></td></tr>`).join('')}
+          </tbody></table></div></section>` : ''}
+      </div>
+      <form id="f-rapida" class="painel bloco">
+        <div class="secao-cab"><h2>Venda</h2><span class="esp"></span>${cart.length ? '<button type="button" class="btn mini leve" data-act="vrLimpar">Limpar</button>' : ''}</div>
+        ${cart.length ? `<div class="itens carrinho">${cart.map((x) => `<div class="item"><span class="n">${x.qtd}× ${esc(x.nome)}</span><span class="valor">${brl(x.qtd * x.preco)}</span>
+          <div class="det">${x.sem.length ? `<span class="sem">sem ${esc(x.sem.join(', ').toLowerCase())}</span>` : ''}${x.obs ? `<span>“${esc(x.obs)}”</span>` : ''}
+          <span class="esp"></span><button type="button" class="btn mini" data-act="cartQtd" data-k="${x.k}" data-d="-1" aria-label="Menos">−</button><button type="button" class="btn mini" data-act="cartQtd" data-k="${x.k}" data-d="1" aria-label="Mais">+</button></div></div>`).join('')}</div>`
+          : '<div class="itens"><p class="vazio">Toque nos itens à esquerda para montar a venda.</p></div>'}
+        <div class="restante"><span>Total</span><b>${brl(tot)}</b></div>
+        <label class="campo"><span>Nome do cliente <small>(opcional, aparece na cozinha)</small></span><input id="vr-nome" type="text" maxlength="40" autocomplete="off" placeholder="Ex.: Carlos"></label>
+        <div class="campo"><span>Forma de pagamento</span><div class="formas" role="radiogroup">${FORMAS.map((f) => `<button type="button" class="forma ${ui.cx.forma === f ? 'on' : ''}" data-act="forma" data-f="${f}" role="radio" aria-checked="${ui.cx.forma === f}">${f}</button>`).join('')}</div></div>
+        ${ui.cx.forma === 'Dinheiro' ? `<div class="duas"><label class="campo"><span>Cliente entregou</span><input id="vr-receb" type="text" inputmode="decimal" placeholder="0,00" data-tot="${tot}"></label>
+          <div class="campo"><span>Troco</span><b id="vr-troco" style="font-size:1.4rem;padding-top:8px">—</b></div></div>` : ''}
+        ${S.turno ? `<button class="btn pri grande cheio" ${cart.length ? '' : 'disabled'}>Finalizar venda · ${brl(tot)}</button>` : '<p class="aviso-pag">Abra o caixa (acima) para vender no balcão.</p>'}
+        <p class="muted" style="font-size:.85rem">Lanches e porções vão direto para a cozinha. A venda entra no relatório do caixa.</p>
+      </form>
+    </div>`;
+  }
   function vCaixa() {
-    const abas = [['mesas', 'Mesas e contas'], ['relatorio', 'Relatório'], ['cardapio', 'Cardápio'], ['ajustes', 'Ajustes']];
+    const abas = [['mesas', 'Mesas e contas'], ['balcao', 'Balcão'], ['relatorio', 'Relatório'], ['cardapio', 'Cardápio'], ['ajustes', 'Ajustes']];
     const t = ui.cx.tab;
-    const corpo = t === 'mesas' ? cxMesas() : t === 'relatorio' ? cxRelatorio() : t === 'cardapio' ? cxCardapio() : cxAjustes();
+    const corpo = t === 'mesas' ? cxMesas() : t === 'balcao' ? cxVendaRapida() : t === 'relatorio' ? cxRelatorio() : t === 'cardapio' ? cxCardapio() : cxAjustes();
     return `${topo('Caixa')}<main class="wrap">${cxTurno()}
       <nav class="abas" aria-label="Seções do caixa">${abas.map(([k, n]) => `<button class="aba ${t === k ? 'on' : ''}" data-act="aba" data-t="${k}">${n}</button>`).join('')}<button class="aba" data-act="ir" data-t="cartoes">Cartões das mesas</button></nav>
       ${corpo}</main>`;
@@ -665,7 +705,7 @@
     if (tela === 'cartoes') return vCartoes();
     return vInicio();
   }
-  function gFolhaCaixa() { return ui.g.sheet && ui.g.sheet.tipo === 'balcao' ? gFolha() : ''; }
+  function gFolhaCaixa() { return ui.g.sheet && (ui.g.sheet.tipo === 'balcao' || (ui.g.sheet.tipo === 'item' && noBalcao())) ? gFolha() : ''; }
   function render() {
     const app = $('#app');
     const vals = {};
@@ -687,6 +727,7 @@
     }
     atualizarDivisao();
     atualizarTroco();
+    trocoRapida();
   }
   function atualizarDivisao() {
     const inp = document.querySelector('input[id^="dv-"]');
@@ -695,6 +736,12 @@
     const n = Math.max(1, parseInt(inp.value, 10) || 1);
     const rest = Number(out.dataset.r);
     out.textContent = brl(Math.ceil((rest / n) * 100) / 100);
+  }
+  function trocoRapida() {
+    const rec = $('#vr-receb'); const out = $('#vr-troco');
+    if (!rec || !out) return;
+    const t = num(rec.value) - Number(rec.dataset.tot);
+    out.textContent = rec.value ? (t >= 0 ? brl(t) : 'falta ' + brl(-t)) : '—';
   }
   function atualizarTroco() {
     const rec = document.querySelector('input[id^="pg-receb-"]');
@@ -742,7 +789,7 @@
       if (!m) return;
       if (m.ing.length || m.cozinha || (m.sab && m.sab.length)) { ui.g.sheet = { tipo: 'item', mid: m.id, sem: [], sab: '', qtd: 1, k: L.rnd(5) }; render(); return; }
       addCart(m, 1, [], '');
-      toast(`+1 ${m.nome}`);
+      if (!noBalcao()) toast(`+1 ${m.nome}`);
       render();
     },
     sabor(d) { ui.g.sheet.sab = d.x; render(); },
@@ -753,14 +800,15 @@
       if (m.sab && m.sab.length && !f.sab) { toast('Escolha o sabor primeiro.', 'erro'); return; }
       const obs = ($('#obs-' + f.k) || {}).value || '';
       addCart(m, f.qtd, f.sem.slice(), obs.trim(), f.sab);
-      ui.g.sheet = null; toast(`+${f.qtd} ${m.nome}${f.sab ? ' – ' + f.sab : ''}`); render();
+      ui.g.sheet = null; if (!noBalcao()) toast(`+${f.qtd} ${m.nome}${f.sab ? ' – ' + f.sab : ''}`); render();
     },
     cartQtd(d) {
-      const x = ui.g.cart.find((y) => y.k === d.k);
+      const cart = carrinho();
+      const x = cart.find((y) => y.k === d.k);
       if (!x) return;
       x.qtd += Number(d.d);
-      if (x.qtd <= 0) ui.g.cart = ui.g.cart.filter((y) => y !== x);
-      if (!ui.g.cart.length) ui.g.sheet = null;
+      if (x.qtd <= 0) cart.splice(cart.indexOf(x), 1);
+      if (!cart.length && !noBalcao()) ui.g.sheet = null;
       render();
     },
     limparCart() { ui.g.cart = []; ui.g.sheet = null; render(); },
@@ -802,6 +850,8 @@
     cxMesa(d) { const c = L.contaDaMesa(S, d.m); if (!c) { toast(`Mesa ${d.m} está livre.`); return; } ui.cx.sel = c.id; ui.cx.conf = null; render(); },
     cxSel(d) { ui.cx.sel = d.c || null; ui.cx.conf = null; render(); },
     forma(d) { ui.cx.forma = d.f; render(); },
+    cxCat(d) { ui.cx.cat = d.c; render(); },
+    vrLimpar() { ui.cx.cart = []; render(); },
     usarDiv(d) {
       const n = Math.max(1, parseInt(($('#dv-' + d.k) || {}).value, 10) || 1);
       const v = $('#pg-valor-' + d.k);
@@ -826,9 +876,10 @@
     }
   };
   function addCart(m, qtd, sem, obs, sab = '') {
-    const igual = !sem.length && !obs && ui.g.cart.find((x) => x.mid === m.id && x.sab === sab && !x.sem.length && !x.obs);
+    const cart = carrinho();
+    const igual = !sem.length && !obs && cart.find((x) => x.mid === m.id && x.sab === sab && !x.sem.length && !x.obs);
     if (igual) igual.qtd += qtd;
-    else ui.g.cart.push({ k: L.rnd(6), mid: m.id, nome: sab ? `${m.nome} – ${sab}` : m.nome, sab, preco: m.preco, qtd, sem, obs });
+    else cart.push({ k: L.rnd(6), mid: m.id, nome: sab ? `${m.nome} – ${sab}` : m.nome, sab, preco: m.preco, qtd, sem, obs });
   }
 
   const FORMS = {
@@ -859,6 +910,23 @@
       if (troco != null && troco > 0) toast(`Troco: ${brl(troco)}`, 'ok');
       if (depois && !depois.aberta) { toast(`${L.rotulo(depois)} paga e liberada.`, 'ok'); }
       else toast(`Pagamento de ${brl(valor)} registrado.`);
+    },
+    async 'f-rapida'() {
+      const cart = ui.cx.cart;
+      if (!cart.length) return;
+      const tot = Math.round(cart.reduce((a, x) => a + x.qtd * x.preco, 0) * 100) / 100;
+      const rec = $('#vr-receb');
+      const troco = rec && rec.value ? num(rec.value) - tot : null;
+      if (troco != null && troco < 0) { toast(`Falta ${brl(-troco)}. Confira o valor entregue.`, 'erro'); return; }
+      const temCoz = cart.some((x) => { const m = S.menu.find((y) => y.id === x.mid); return m && m.cozinha; });
+      const r = await fazer('vendaRapida', { nome: ($('#vr-nome') || {}).value || '', forma: ui.cx.forma,
+        itens: cart.map((x) => ({ mid: x.mid, qtd: x.qtd, sem: x.sem, obs: x.obs, sab: x.sab })) });
+      if (!r) return;
+      ui.cx.cart = [];
+      const n = $('#vr-nome'); if (n) n.value = '';
+      if (troco != null && troco > 0) toast(`Troco: ${brl(troco)}`, 'ok');
+      toast(`Venda de ${brl(tot)} registrada${temCoz ? ' e enviada para a cozinha' : ''}.`, 'ok');
+      render();
     },
     async 'f-menu'(form) {
       const k = form.dataset.id || 'novo';
@@ -921,6 +989,7 @@
     const id = e.target.id || '';
     if (id.startsWith('dv-')) atualizarDivisao();
     if (id.startsWith('pg-')) atualizarTroco();
+    if (id === 'vr-receb') trocoRapida();
   });
   document.addEventListener('change', (e) => { if (e.target.id === 'aj-logo' && e.target.files[0]) carregarLogo(e.target.files[0]); });
   document.addEventListener('keydown', (e) => {

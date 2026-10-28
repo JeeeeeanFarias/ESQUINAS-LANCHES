@@ -198,6 +198,18 @@
       }
     },
 
+    vendaRapida(s, a) {
+      if (!s.turno) throw new Error('Abra o caixa antes de vender no balcão.');
+      if (!FORMAS.includes(a.forma)) throw new Error('Escolha a forma de pagamento.');
+      const nome = String(a.nome || '').trim() || 'Venda rápida';
+      H.lancar(s, Object.assign({}, a, { mesa: 'B', conta: null, nome }));
+      const c = s.contas.find((x) => x.id === a.id + 'c');
+      c.rapida = true;
+      const t = total(c);
+      if (t > 0) H.pagar(s, Object.assign({}, a, { conta: c.id, valor: t }));
+      else { c.aberta = false; c.fechadaEm = a.t; c.fechadaPor = a.por; c.turno = s.turno.id; }
+    },
+
     removerPag(s, a) {
       const c = acharConta(s, a.conta);
       if (!c.aberta) throw new Error('Essa conta já foi fechada.');

@@ -292,3 +292,7 @@ td.d, th.d { text-align: right; }
 .marca > span:last-child, .hero h1, .cli-topo b { font-family: 'Kaushan Script', 'Brush Script MT', cursive; font-weight: 400; letter-spacing: 0; }
 .marca > span:last-child { font-size: 1.25rem; }
 .hero h1 { color: var(--accent); }
+
+/* Venda rápida no balcão */
+.vr-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); gap: 8px; }
+.vr-grade .prod { min-height: 74px; align-content: start; }
