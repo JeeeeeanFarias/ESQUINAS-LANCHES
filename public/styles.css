@@ -296,3 +296,9 @@ td.d, th.d { text-align: right; }
 /* Venda rápida no balcão */
 .vr-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); gap: 8px; }
 .vr-grade .prod { min-height: 74px; align-content: start; }
+
+/* Itens sem preço e avisos do caixa */
+.prod .p.sem-preco { font-weight: 500; color: var(--muted); font-size: .85rem; }
+.aviso-linha { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.aviso-linha > span { flex: 1; min-width: 200px; }
+.login .btn.leve { justify-self: start; }

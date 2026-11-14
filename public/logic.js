@@ -31,7 +31,7 @@
   }
 
 
-  // Cardápio da Esquina's (preços em zero até o Jean passar os valores novos)
+  // Cardápio da Esquina's. Os preços começam em zero: o caixa preenche na aba Cardápio.
   function montarCardapio() {
     const base = ['Maionese', 'Alface', 'Tomate', 'Milho', 'Ervilha', 'Queijo', 'Ovo'];
     const PASTEL = ['Carne', 'Frango', 'Calabresa', 'Queijo', 'Estrogonofe'];
@@ -85,13 +85,22 @@
   }
 
   function migrar(s) {
+    s.cfg = Object.assign({ nome: "Esquina's Lanches", mesas: 16, impressora: 80, logoV: 0, logoData: '' }, s.cfg || {});
     s.contas = s.contas || [];
     s.pedidos = s.pedidos || [];
     s.turnos = s.turnos || [];
-    s.log = s.log || [];
     s.feitos = s.feitos || [];
     s.equipe = s.equipe || [];
+    s.turno = s.turno || null;
+    // O registro guarda só cancelamentos e correções (é o que aparece no relatório)
+    s.log = (s.log || []).filter((l) => l.tipo === 'cancel').slice(0, 300);
     s.menu = (s.menu || []).map((m) => Object.assign({ sab: [], ing: [] }, m));
+    const tid = s.turno ? s.turno.id : null;
+    s.contas.forEach((c) => {
+      c.itens = c.itens || [];
+      c.pags = c.pags || [];
+      c.itens.forEach((i) => { if (i.turno === undefined) i.turno = tid; });
+    });
     garantirCodigos(s);
     return s;
   }
@@ -107,36 +116,50 @@
   const contaDaMesa = (s, m) => s.contas.find((c) => c.aberta && c.mesas.includes(String(m)));
   const acharConta = (s, id) => {
     const c = s.contas.find((x) => x.id === id);
-    if (!c) throw new Error('Conta não encontrada.');
+    if (!c) throw new Error('Conta não encontrada. Ela pode já ter sido fechada.');
     return c;
   };
+  const contaAberta = (s, id) => {
+    const c = acharConta(s, id);
+    if (!c.aberta) throw new Error('Essa conta já foi fechada.');
+    return c;
+  };
+  const mesaValida = (s, m) => /^\d+$/.test(String(m)) && Number(m) >= 1 && Number(m) <= s.cfg.mesas;
   const ordenar = (ms) => ms.sort((a, b) => Number(a) - Number(b));
 
-  function registrar(s, a, txt, tipo = 'info') {
-    s.log.unshift({ t: a.t, por: a.por, txt, tipo, turno: s.turno ? s.turno.id : null });
-    if (s.log.length > 500) s.log.length = 500;
+  function anotar(s, a, txt) {
+    s.log.unshift({ t: a.t, por: a.por, txt, tipo: 'cancel', turno: s.turno ? s.turno.id : null });
+    if (s.log.length > 300) s.log.length = 300;
+  }
+  function fechar(s, c, a) {
+    c.aberta = false;
+    c.fechadaEm = a.t;
+    c.fechadaPor = a.por;
+    c.turno = s.turno ? s.turno.id : null;
   }
 
   const H = {
     lancar(s, a) {
       if (!Array.isArray(a.itens) || !a.itens.length) throw new Error('O pedido está vazio.');
+      if (a.itens.length > 60) throw new Error('Pedido grande demais. Envie em duas partes.');
       let c = null;
       if (a.conta) {
-        c = s.contas.find((x) => x.id === a.conta && x.aberta);
-        if (!c) throw new Error('Essa conta já foi fechada.');
+        c = contaAberta(s, a.conta);
       } else if (a.mesa !== 'B') {
+        if (!mesaValida(s, a.mesa)) throw new Error('Mesa inválida.');
         c = contaDaMesa(s, a.mesa);
       }
       if (!c) {
         const mesa = a.mesa === 'B' ? 'B' : String(a.mesa);
-        if (mesa !== 'B' && !(Number(mesa) >= 1 && Number(mesa) <= s.cfg.mesas)) throw new Error('Mesa inválida.');
-        c = { id: a.id + 'c', mesas: [mesa], nome: String(a.nome || '').slice(0, 40), aberta: true,
+        c = { id: a.id + 'c', mesas: [mesa], nome: String(a.nome || '').trim().slice(0, 40), aberta: true,
           abertaEm: a.t, abertaPor: a.por, itens: [], pags: [] };
         s.contas.push(c);
       }
+      const tid = s.turno ? s.turno.id : null;
       const novos = a.itens.map((it, i) => {
         const m = s.menu.find((x) => x.id === it.mid);
-        if (!m) throw new Error('Um item não está mais no cardápio.');
+        if (!m) throw new Error('Um item do pedido não está mais no cardápio. Monte o pedido de novo.');
+        if (!m.ativo) throw new Error(`${m.nome} está em falta. Tire do pedido e envie de novo.`);
         let sab = '';
         if (m.sab && m.sab.length) {
           sab = String(it.sab || '');
@@ -144,9 +167,9 @@
         }
         return { id: a.id + '-' + i, mid: m.id, nome: sab ? `${m.nome} – ${sab}` : m.nome, sab, preco: m.preco,
           qtd: Math.max(1, Math.min(99, parseInt(it.qtd, 10) || 1)),
-          sem: Array.isArray(it.sem) ? it.sem.slice(0, 20).map(String) : [],
-          obs: String(it.obs || '').slice(0, 200), cozinha: !!m.cozinha,
-          por: a.por, em: a.t, ped: null, canc: null };
+          sem: Array.isArray(it.sem) ? it.sem.slice(0, 20).map((x) => String(x).slice(0, 40)) : [],
+          obs: String(it.obs || '').trim().slice(0, 200), cozinha: !!m.cozinha,
+          por: a.por, em: a.t, turno: tid, ped: null, canc: null };
       });
       const coz = novos.filter((i) => i.cozinha);
       if (coz.length) {
@@ -156,46 +179,45 @@
         s.pedidos.push(p);
       }
       c.itens.push(...novos);
-      registrar(s, a, `${rotulo(c)}: lançou ${novos.map((i) => i.qtd + '× ' + i.nome).join(', ')}`);
     },
 
     status(s, a) {
       const p = s.pedidos.find((x) => x.id === a.pedido);
-      if (!p) throw new Error('Pedido não encontrado.');
+      if (!p) throw new Error('Esse pedido não está mais na lista.');
       if (!['novo', 'preparando', 'pronto', 'entregue'].includes(a.status)) throw new Error('Etapa inválida.');
+      if (p.status === 'cancelado' || p.status === a.status) return;
       p.status = a.status;
       p.ts[a.status] = a.t;
     },
 
     cancelarItem(s, a) {
-      const c = acharConta(s, a.conta);
-      if (!c.aberta) throw new Error('Essa conta já foi fechada.');
+      const c = contaAberta(s, a.conta);
       const it = c.itens.find((i) => i.id === a.item);
       if (!it || it.canc) return;
+      const novoTotal = r2(total(c) - it.preco * it.qtd);
+      if (pago(c) > novoTotal + 0.001) {
+        throw new Error(`Essa conta já recebeu ${brl(pago(c))}. Remova um pagamento antes de cancelar este item.`);
+      }
       it.canc = { por: a.por, t: a.t };
       if (it.ped) {
         const p = s.pedidos.find((x) => x.id === it.ped);
         if (p && p.itens.every((id) => { const x = c.itens.find((i) => i.id === id); return !x || x.canc; })) p.status = 'cancelado';
       }
-      registrar(s, a, `${rotulo(c)}: cancelou ${it.qtd}× ${it.nome} (${brl(it.preco * it.qtd)})`, 'cancel');
+      anotar(s, a, `${rotulo(c)}: cancelou ${it.qtd}× ${it.nome} (${brl(it.preco * it.qtd)})`);
+      // Sem nada a cobrar, a mesa fica livre de novo
+      if (!vivos(c).length && !c.pags.length) fechar(s, c, a);
+      else if (c.pags.length && restante(c) === 0 && total(c) > 0) fechar(s, c, a);
     },
 
     pagar(s, a) {
       if (!s.turno) throw new Error('Abra o caixa antes de registrar pagamentos.');
-      const c = acharConta(s, a.conta);
-      if (!c.aberta) throw new Error('Essa conta já foi fechada.');
+      const c = contaAberta(s, a.conta);
       if (!FORMAS.includes(a.forma)) throw new Error('Escolha a forma de pagamento.');
       const valor = r2(Number(a.valor));
       if (!(valor > 0)) throw new Error('Digite um valor maior que zero.');
       if (valor > restante(c) + 0.001) throw new Error(`O valor passa do que falta pagar (${brl(restante(c))}).`);
       c.pags.push({ id: a.id, valor, forma: a.forma, por: a.por, t: a.t, turno: s.turno.id });
-      registrar(s, a, `${rotulo(c)}: recebeu ${brl(valor)} no ${a.forma}`);
-      if (restante(c) === 0) {
-        c.aberta = false;
-        c.fechadaEm = a.t;
-        c.fechadaPor = a.por;
-        c.turno = s.turno.id;
-      }
+      if (restante(c) === 0) fechar(s, c, a);
     },
 
     vendaRapida(s, a) {
@@ -207,69 +229,68 @@
       c.rapida = true;
       const t = total(c);
       if (t > 0) H.pagar(s, Object.assign({}, a, { conta: c.id, valor: t }));
-      else { c.aberta = false; c.fechadaEm = a.t; c.fechadaPor = a.por; c.turno = s.turno.id; }
+      else fechar(s, c, a);
     },
 
     removerPag(s, a) {
-      const c = acharConta(s, a.conta);
-      if (!c.aberta) throw new Error('Essa conta já foi fechada.');
+      const c = contaAberta(s, a.conta);
       const p = c.pags.find((x) => x.id === a.pag);
       if (!p) return;
       c.pags = c.pags.filter((x) => x !== p);
-      registrar(s, a, `${rotulo(c)}: removeu pagamento de ${brl(p.valor)} (${p.forma})`, 'cancel');
+      anotar(s, a, `${rotulo(c)}: removeu pagamento de ${brl(p.valor)} (${p.forma})`);
     },
 
     liberar(s, a) {
-      const c = acharConta(s, a.conta);
-      if (total(c) > 0) throw new Error('Essa conta ainda tem valor. Registre o pagamento.');
-      c.aberta = false;
-      c.fechadaEm = a.t;
-      c.fechadaPor = a.por;
-      c.turno = s.turno ? s.turno.id : null;
-      registrar(s, a, `${rotulo(c)}: liberou a mesa sem consumo`);
+      const c = contaAberta(s, a.conta);
+      if (total(c) > 0) throw new Error('Essa conta ainda tem valor. O pagamento é feito no caixa.');
+      if (c.pags.length) throw new Error('Essa conta tem pagamento registrado. Fale com o caixa.');
+      fechar(s, c, a);
     },
 
     juntar(s, a) {
-      const c = acharConta(s, a.conta);
+      const c = contaAberta(s, a.conta);
       const m = String(a.mesa);
       if (ehBalcao(c)) throw new Error('Pedidos de balcão não juntam com mesas.');
+      if (!mesaValida(s, m)) throw new Error('Mesa inválida.');
       if (c.mesas.includes(m)) return;
       const outra = contaDaMesa(s, m);
       if (outra) {
         outra.itens.forEach((i) => c.itens.push(i));
         outra.pags.forEach((p) => c.pags.push(p));
         outra.mesas.forEach((x) => { if (!c.mesas.includes(x)) c.mesas.push(x); });
+        c.abertaEm = Math.min(c.abertaEm, outra.abertaEm);
         s.pedidos.forEach((p) => { if (p.conta === outra.id) p.conta = c.id; });
         s.contas = s.contas.filter((x) => x !== outra);
       } else {
         c.mesas.push(m);
       }
       ordenar(c.mesas);
-      registrar(s, a, `Juntou a mesa ${m}: agora ${rotulo(c)}`);
     },
 
     separar(s, a) {
-      const c = acharConta(s, a.conta);
+      const c = contaAberta(s, a.conta);
       const m = String(a.mesa);
-      if (c.mesas.length < 2) return;
+      if (c.mesas.length < 2 || !c.mesas.includes(m)) return;
       c.mesas = c.mesas.filter((x) => x !== m);
-      registrar(s, a, `Separou a mesa ${m} de ${rotulo(c)}`);
     },
 
     trocar(s, a) {
-      const c = acharConta(s, a.conta);
+      const c = contaAberta(s, a.conta);
       const m = String(a.mesa);
+      if (ehBalcao(c)) throw new Error('Pedidos de balcão não mudam de mesa.');
+      if (!mesaValida(s, m)) throw new Error('Mesa inválida.');
       const ocupada = contaDaMesa(s, m);
       if (ocupada && ocupada !== c) throw new Error(`A mesa ${m} já tem conta aberta. Use "Juntar mesa".`);
-      const antes = rotulo(c);
       c.mesas = [m];
-      registrar(s, a, `${antes} mudou para a mesa ${m}`);
     },
 
     abrirCaixa(s, a) {
       if (s.turno) throw new Error('O caixa já está aberto.');
-      s.turno = { id: a.id, abertoEm: a.t, abertoPor: a.por, fundo: r2(Number(a.fundo) || 0) };
-      registrar(s, a, `Abriu o caixa com ${brl(s.turno.fundo)} de troco`);
+      const fundo = r2(Number(a.fundo) || 0);
+      if (fundo < 0) throw new Error('O troco inicial não pode ser negativo.');
+      s.turno = { id: a.id, abertoEm: a.t, abertoPor: a.por, fundo };
+      // Pedidos lançados com o caixa fechado entram neste caixa
+      s.contas.forEach((c) => c.itens.forEach((i) => { if (!i.turno) i.turno = a.id; }));
     },
 
     fecharCaixa(s, a) {
@@ -277,7 +298,7 @@
       const id = s.turno.id;
       const resumo = relatorio(s);
       s.turnos.unshift(Object.assign({}, s.turno, { fechadoEm: a.t, fechadoPor: a.por, resumo }));
-      if (s.turnos.length > 120) s.turnos.length = 120;
+      if (s.turnos.length > 200) s.turnos.length = 200;
       const fechadas = new Set(s.contas.filter((c) => !c.aberta).map((c) => c.id));
       s.contas = s.contas.filter((c) => c.aberta);
       s.pedidos = s.pedidos.filter((p) => !fechadas.has(p.conta) && !['entregue', 'cancelado'].includes(p.status));
@@ -290,14 +311,16 @@
       const nome = String(it.nome || '').trim().slice(0, 60);
       const preco = r2(Number(it.preco));
       if (!nome) throw new Error('Dê um nome ao item.');
-      if (!(preco >= 0)) throw new Error('Preço inválido.');
+      if (!(preco >= 0) || preco > 100000) throw new Error('Preço inválido.');
+      const lista = (v) => Array.from(new Set((Array.isArray(v) ? v : []).map((x) => String(x).trim().slice(0, 40)).filter(Boolean))).slice(0, 20);
       const limpo = { nome, preco, cat: String(it.cat || 'Outros').trim().slice(0, 30) || 'Outros',
-        cozinha: !!it.cozinha, ativo: it.ativo !== false,
-        ing: (Array.isArray(it.ing) ? it.ing : []).map((x) => String(x).trim()).filter(Boolean).slice(0, 20),
-        sab: (Array.isArray(it.sab) ? it.sab : []).map((x) => String(x).trim()).filter(Boolean).slice(0, 20) };
+        cozinha: !!it.cozinha, ativo: it.ativo !== false, ing: lista(it.ing), sab: lista(it.sab) };
       const atual = it.id && s.menu.find((m) => m.id === it.id);
       if (atual) Object.assign(atual, limpo);
-      else s.menu.push(Object.assign({ id: rnd(6) }, limpo));
+      else {
+        if (s.menu.length >= 300) throw new Error('O cardápio chegou ao limite de 300 itens.');
+        s.menu.push(Object.assign({ id: rnd(6) }, limpo));
+      }
     },
 
     menuRemover(s, a) {
@@ -310,6 +333,8 @@
       if (c.mesas !== undefined) {
         const n = parseInt(c.mesas, 10);
         if (!(n >= 1 && n <= 80)) throw new Error('Número de mesas entre 1 e 80.');
+        const maior = Math.max(0, ...s.contas.filter((x) => x.aberta && !ehBalcao(x)).flatMap((x) => x.mesas.map(Number)));
+        if (maior > n) throw new Error(`A mesa ${maior} está com conta aberta. Feche a conta antes de diminuir as mesas.`);
         s.cfg.mesas = n;
         garantirCodigos(s);
       }
@@ -322,8 +347,9 @@
     },
 
     equipeSalvar(s, a) {
-      const lista = (a.equipe || []).map((x) => String(x).trim().slice(0, 30)).filter(Boolean);
+      const lista = (Array.isArray(a.equipe) ? a.equipe : []).map((x) => String(x).trim().slice(0, 30)).filter(Boolean);
       if (!lista.length) throw new Error('Deixe pelo menos uma pessoa na equipe.');
+      if (lista.length > 40) throw new Error('A equipe chegou ao limite de 40 pessoas.');
       s.equipe = Array.from(new Set(lista));
     }
   };
@@ -332,10 +358,9 @@
     if (!a || !a.tipo || !a.id) throw new Error('Ação inválida.');
     migrar(s);
     if (s.feitos.includes(a.id)) return s;
-    const f = H[a.tipo];
-    if (!f) throw new Error('Ação desconhecida.');
+    if (!Object.prototype.hasOwnProperty.call(H, a.tipo)) throw new Error('Ação desconhecida.');
     a.por = String(a.por || 'Equipe').slice(0, 30);
-    f(s, a);
+    H[a.tipo](s, a);
     s.feitos.unshift(a.id);
     if (s.feitos.length > 300) s.feitos.length = 300;
     s.v = (s.v || 0) + 1;
@@ -359,7 +384,7 @@
     }));
     const itens = {};
     s.contas.forEach((c) => vivos(c).forEach((i) => {
-      if (i.em < t.abertoEm) return;
+      if (i.turno !== t.id) return;
       const k = itens[i.nome] || (itens[i.nome] = { nome: i.nome, qtd: 0, valor: 0 });
       k.qtd += i.qtd;
       k.valor = r2(k.valor + i.qtd * i.preco);
@@ -372,7 +397,7 @@
       fundo: t.fundo,
       gaveta: r2(t.fundo + (porForma['Dinheiro'] || 0)),
       itens: Object.values(itens).sort((a, b) => b.qtd - a.qtd || b.valor - a.valor),
-      cancelamentos: s.log.filter((l) => l.turno === t.id && l.tipo === 'cancel'),
+      cancelamentos: (s.log || []).filter((l) => l.turno === t.id && l.tipo === 'cancel'),
       abertas: abertas.length,
       emAberto: r2(abertas.reduce((a, c) => a + restante(c), 0))
     };
@@ -391,6 +416,7 @@
         itens: vivos(c).map((i) => ({ nome: i.nome, qtd: i.qtd, preco: i.preco, sem: i.sem, obs: i.obs })),
         total: total(c), pago: pago(c), restante: restante(c)
       } : null,
+      v: s.v,
       t: Date.now()
     };
   }
@@ -399,6 +425,7 @@
     return 'R$ ' + (Number(n) || 0).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   }
 
-  root.Logic = { FORMAS, rnd, seed, migrar, apply, relatorio, publicoMesa, vivos, total, pago, restante,
+  const TIPOS = Object.keys(H);
+  root.Logic = { FORMAS, TIPOS, rnd, seed, migrar, apply, relatorio, publicoMesa, vivos, total, pago, restante,
     rotulo, contaDaMesa, ehBalcao, brl, garantirCodigos };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -20,63 +20,103 @@
   const DEMO_SITE = 'https://esquinaslanches.netlify.app';
 
   /* ---------- Conexão ---------- */
+  const CHAVE_DEMO = 'demo-estado-v3';
+  const erroCom = (msg, code) => { const e = new Error(msg); e.code = code; return e; };
+  // O servidor manda só o que cada aparelho pode ver; aqui completamos o que faltar.
+  function aceitar(j) {
+    if (j._nivel) nivel = j._nivel;
+    j.log = j.log || [];
+    j.turnos = j.turnos || [];
+    j.codes = j.codes || {};
+    return j;
+  }
   const API = {
-    modo: 'demo', _pin: '', demo: null,
+    modo: 'demo', demo: null,
     async iniciar() {
       try {
         const r = await fetch('/api/ping', { cache: 'no-store' });
         if (r.ok && (await r.json()).app === 'lanchonete-mesas') { this.modo = 'online'; return; }
       } catch (e) { /* sem servidor: modo demonstração */ }
       if (/\.netlify\.app$/.test(location.hostname)) {
-        document.getElementById('app').innerHTML = '<main class="wrap login"><h1>O servidor do site não está ligado</h1><p>O site foi publicado sem a pasta <b>netlify/functions</b>, que guarda os pedidos. Isso acontece quando a pasta é arrastada direto no Netlify. Publique pelo GitHub (veja o LEIA-ME) e recarregue esta página.</p></main>';
+        document.getElementById('app').innerHTML = '<main class="wrap login"><h1>Não consegui falar com o servidor</h1><p>Confira a internet e recarregue a página. Se continuar assim, o site foi publicado sem a pasta <b>netlify</b>, que guarda os pedidos (veja o LEIA-ME).</p><p><a class="btn pri" href="">Tentar de novo</a></p></main>';
         throw new Error('sem servidor');
       }
       this.modo = 'demo';
-      this.demo = L.migrar(guarda.get('demo-estado-v3') || L.seed());
-      guarda.set('demo-estado-v3', this.demo);
+      this.demo = L.migrar(guarda.get(CHAVE_DEMO) || L.seed());
+      guarda.set(CHAVE_DEMO, this.demo);
     },
-    pin() { return (sessao && sessao.pin) || this._pin; },
     async estado(v, pin) {
       if (this.modo === 'demo') return this.demo;
-      const r = await fetch('/api/estado' + (v ? '?v=' + v : ''), { headers: { 'x-pin': pin || this.pin() }, cache: 'no-store' });
-      if (r.status === 401) { const e = new Error('Senha da equipe incorreta.'); e.code = 401; throw e; }
+      const q = v ? `?v=${v}&n=${nivel || ''}` : '';
+      const r = await fetch('/api/estado' + q, { headers: { 'x-pin': pin || cred.pin }, cache: 'no-store' });
+      if (r.status === 401) throw erroCom('Senha incorreta.', 401);
       if (!r.ok) throw new Error('Sem resposta do servidor.');
       const j = await r.json();
-      return j.same ? null : j;
+      return j.same ? null : aceitar(j);
     },
     async acao(tipo, dados) {
       const a = Object.assign({}, dados, { tipo, id: L.rnd(10), por: sessao ? sessao.nome : 'Equipe', t: Date.now() });
       if (this.modo === 'demo') {
-        const base = L.migrar(guarda.get('demo-estado-v3') || this.demo);
+        const base = L.migrar(guarda.get(CHAVE_DEMO) || this.demo);
         this.demo = L.apply(JSON.parse(JSON.stringify(base)), a);
-        guarda.set('demo-estado-v3', this.demo);
+        guarda.set(CHAVE_DEMO, this.demo);
         return { s: this.demo, id: a.id };
       }
-      const r = await fetch('/api/acao', { method: 'POST', headers: { 'content-type': 'application/json', 'x-pin': this.pin() }, body: JSON.stringify(a) });
+      let r;
+      try {
+        r = await fetch('/api/acao', { method: 'POST', headers: { 'content-type': 'application/json', 'x-pin': cred.pin }, body: JSON.stringify(a) });
+      } catch (e) {
+        throw new Error('Sem internet. Nada foi salvo. Tente de novo.');
+      }
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.erro || 'Não foi possível salvar. Confira a internet.');
-      return { s: j, id: a.id };
+      if (r.status === 401) throw erroCom('A senha deste aparelho mudou. Entre de novo.', 401);
+      if (!r.ok) throw erroCom(j.erro || 'Não foi possível salvar. Tente de novo.', r.status);
+      return { s: aceitar(j), id: a.id };
     },
-    async mesa(code) {
-      if (this.modo === 'demo') return L.publicoMesa(L.migrar(guarda.get('demo-estado-v3') || this.demo), code, true);
-      const r = await fetch('/api/mesa?c=' + encodeURIComponent(code), { cache: 'no-store' });
+    async turnos() {
+      if (this.modo === 'demo') return (S && S.turnos) || [];
+      const r = await fetch('/api/turnos', { headers: { 'x-pin': cred.pin }, cache: 'no-store' });
+      if (!r.ok) throw new Error('Sem resposta do servidor.');
+      return (await r.json()).turnos || [];
+    },
+    async mesa(code, v) {
+      if (this.modo === 'demo') return L.publicoMesa(L.migrar(guarda.get(CHAVE_DEMO) || this.demo), code, true);
+      const r = await fetch('/api/mesa?c=' + encodeURIComponent(code) + (v ? '&v=' + v : ''), { cache: 'no-store' });
       if (r.status === 404) return null;
       if (!r.ok) throw new Error('Sem resposta do servidor.');
-      return r.json();
+      const j = await r.json();
+      return j.same ? 'igual' : j;
     }
   };
 
   /* ---------- Estado da tela ---------- */
   let S = null;
+  let nivel = null; // 'gerente' (caixa) ou 'equipe' (garçom e cozinha)
   let sessao = guarda.get('sessao');
+  let cred = guarda.get('cred') || { pin: '' };
+  if (!cred.pin && sessao && sessao.pin) cred = { pin: sessao.pin }; // aparelhos que já estavam logados
+  if (sessao && sessao.nome) sessao = { nome: sessao.nome }; else sessao = null;
   let tela = 'inicio';
   let codigoMesa = null;
   let cliente = null;
   const ui = {
     g: { vista: 'mesas', alvo: null, cart: [], cat: null, sheet: null, conf: null },
-    cx: { tab: 'mesas', sel: null, forma: 'Débito', confFechar: false, edit: null, conf: null, cart: [], cat: null },
-    previa: null, som: false, offline: false, loginErro: '', carregando: true
+    cx: { tab: 'mesas', sel: null, forma: 'Débito', confFechar: false, edit: null, conf: null, cart: [], cat: null, turnos: null },
+    previa: null, som: false, offline: false, loginErro: '', carregando: true,
+    impressos: new Set(guarda.get('impressos') || [])
   };
+  let ultimaMudanca = Date.now();
+  let ultimoPoll = 0;
+  let tocando = 0;
+  let renderPendente = false;
+  const NOME_PADRAO = "Esquina's Lanches";
+  const EM_ANDAMENTO = ['novo', 'preparando', 'pronto'];
+  const precoTxt = (p, vazio = 'sem preço') => (p > 0 ? brl(p) : vazio);
+  function deslogar() {
+    cred = { pin: '' }; guarda.set('cred', cred);
+    S = null; nivel = null; ui.cx.turnos = null;
+    render();
+  }
 
   /* ---------- Utilidades de tela ---------- */
   function logoSrc(cfg) {
@@ -87,7 +127,7 @@
   }
   function logoHtml(cfg, tam) {
     const src = logoSrc(cfg);
-    const nome = (cfg && cfg.nome) || 'Lanchonete';
+    const nome = (cfg && cfg.nome) || NOME_PADRAO;
     return `<span class="logo ${tam}" aria-hidden="true">${src ? `<img src="${esc(src)}" alt="">` : esc(nome.trim()[0] || 'L')}</span>`;
   }
   function toast(txt, tipo = '') {
@@ -96,23 +136,28 @@
     const d = document.createElement('div');
     d.className = 'toast ' + tipo;
     d.textContent = txt;
+    while (box.children.length >= 3) box.firstChild.remove();
     box.appendChild(d);
     setTimeout(() => d.remove(), tipo === 'erro' ? 4500 : 2600);
   }
   async function fazer(tipo, dados) {
     try {
       const r = await API.acao(tipo, dados);
+      ultimaMudanca = Date.now();
       atualizar(r.s);
       return r;
     } catch (e) {
       toast(e.message || 'Não deu certo.', 'erro');
+      if (e.code === 401) deslogar();
       return null;
     }
   }
-  function atualizar(novo) {
+  function atualizar(novo, doServidor) {
     const ant = S;
     S = novo;
     avisos(ant, novo);
+    // Não troca a tela debaixo do dedo: espera o toque terminar
+    if (doServidor && tocando && Date.now() - tocando < 2500) { renderPendente = true; return; }
     render();
   }
   function ir(t) {
@@ -120,8 +165,15 @@
     guarda.set('tela', t);
     try { history.replaceState(null, '', t === 'inicio' ? location.pathname : '#' + t); } catch (e) { /* ok */ }
     if (t === 'cozinha') manterTelaLigada();
+    if (t === 'caixa' && ui.cx.tab === 'relatorio') carregarTurnos();
     window.scrollTo(0, 0);
     render();
+    agendarPoll(true);
+  }
+  async function carregarTurnos() {
+    if (nivel !== 'gerente' && API.modo === 'online') return;
+    try { ui.cx.turnos = await API.turnos(); } catch (e) { if (!ui.cx.turnos) ui.cx.turnos = []; }
+    if (tela === 'caixa' && ui.cx.tab === 'relatorio') render();
   }
   const contaPorId = (id) => S && S.contas.find((c) => c.id === id);
   const noBalcao = () => tela === 'caixa' && ui.cx.tab === 'balcao';
@@ -189,9 +241,13 @@
     };
     if (d.readyState === 'complete') vai(); else f.onload = vai;
   }
+  function itensDoPedido(p) {
+    const c = contaPorId(p.conta);
+    return p.itens.map((id) => c && c.itens.find((i) => i.id === id)).filter((i) => i && !i.canc);
+  }
   function ticketCozinha(p) {
     const c = contaPorId(p.conta);
-    const itens = p.itens.map((id) => c && c.itens.find((i) => i.id === id)).filter((i) => i && !i.canc);
+    const itens = itensDoPedido(p);
     return `<div class="c peq">${esc(S.cfg.nome)} · COZINHA</div><hr>
       <div class="c big">${esc((c ? L.rotulo(c) : p.rotulo).toUpperCase())}</div>
       <div class="c">${hora(p.em)} · ${esc(p.por)}</div><hr>
@@ -206,6 +262,19 @@
       <hr><div class="l m"><span>TOTAL</span><span>${brl(L.total(c))}</span></div>
       ${c.pags.length ? `<div class="l"><span>Já pago</span><span>${brl(L.pago(c))}</span></div><div class="l m"><span>FALTA</span><span>${brl(L.restante(c))}</span></div>` : ''}
       <hr><div class="c peq">Obrigado pela preferência!</div>`;
+  }
+  function ticketResumo(t, r) {
+    return `<div class="c m">${esc(S.cfg.nome)}</div><div class="c">${t.fechadoEm ? 'FECHAMENTO DE CAIXA' : 'PARCIAL DO CAIXA'}</div><hr>
+      <div class="l"><span>Abertura</span><span>${dataHora(t.abertoEm)}</span></div>
+      <div class="l"><span>${t.fechadoEm ? 'Fechamento' : 'Agora'}</span><span>${dataHora(t.fechadoEm || Date.now())}</span></div>
+      <div class="l"><span>Abriu</span><span>${esc(t.abertoPor)}</span></div>
+      ${t.fechadoPor ? `<div class="l"><span>Fechou</span><span>${esc(t.fechadoPor)}</span></div>` : ''}<hr>
+      ${FORMAS.map((f) => `<div class="l"><span>${f}</span><span>${brl(r.porForma[f] || 0)}</span></div>`).join('')}
+      <div class="l m"><span>TOTAL</span><span>${brl(r.total)}</span></div><hr>
+      <div class="l"><span>Troco inicial</span><span>${brl(r.fundo)}</span></div>
+      <div class="l"><span>Dinheiro na gaveta</span><span>${brl(r.gaveta)}</span></div>
+      <div class="l"><span>Contas pagas</span><span>${r.nContas}</span></div>
+      ${r.itens && r.itens.length ? `<hr><div class="c peq">ITENS VENDIDOS</div>${r.itens.map((i) => `<div class="l"><span>${i.qtd}x ${esc(i.nome)}</span><span>${fmt(i.valor)}</span></div>`).join('')}` : ''}`;
   }
 
   /* ---------- Cartões das mesas ---------- */
@@ -259,7 +328,7 @@
   function faixaOff() { return ui.offline ? '<div class="faixa-off" role="status">Sem conexão com o servidor. Tentando de novo…</div>' : ''; }
   function topo(titulo) {
     return `<header class="topo"><div class="wrap topo-in">
-      <button class="marca" data-act="ir" data-t="inicio" aria-label="Voltar ao início">${logoHtml(S && S.cfg, 'sm')}<span>${esc((S && S.cfg.nome) || 'Lanchonete')}</span></button>
+      <button class="marca" data-act="ir" data-t="inicio" aria-label="Voltar ao início">${logoHtml(S && S.cfg, 'sm')}<span>${esc((S && S.cfg.nome) || NOME_PADRAO)}</span></button>
       <span class="topo-t">${esc(titulo)}</span><span class="esp"></span>
       ${sessao ? `<span class="quem"><span class="so-largo">Você é </span><b>${esc(sessao.nome)}</b></span><button class="btn mini no-escuro" data-act="sair">Trocar</button>` : ''}
     </div></header>${faixaOff()}${faixaDemo()}`;
@@ -274,11 +343,13 @@
       ['caixa', 'Caixa', 'Contas, pagamentos, cardápio e relatório', 'Notebook'],
       ['cartoes', 'Cartões das mesas', 'QR Codes prontos para a gráfica', '10 × 15 cm']
     ];
+    const trancada = (t) => API.modo === 'online' && SO_GERENTE_TELA[t] && nivel !== 'gerente';
     let mesasOpt = '';
     if (S) for (let i = 1; i <= S.cfg.mesas; i++) mesasOpt += `<option value="${i}">Mesa ${i}</option>`;
     return `${faixaDemo()}<main class="wrap inicio">
-      <div class="hero">${logoHtml(cfg, 'lg')}<h1>${esc((cfg && cfg.nome) || 'Lanchonete')}</h1><p class="muted">Escolha a tela deste aparelho. Ele lembra da escolha.</p></div>
-      <div class="portas">${portas.map(([t, n, d, a, pri]) => `<button class="porta ${pri ? 'principal' : ''}" data-act="ir" data-t="${t}"><span class="rot">${a}</span><b>${n}</b><span class="muted">${d}</span></button>`).join('')}</div>
+      <div class="hero">${logoHtml(cfg, 'lg')}<h1>${esc((cfg && cfg.nome) || NOME_PADRAO)}</h1><p class="muted">Escolha a tela deste aparelho. Ele lembra da escolha.</p></div>
+      <div class="portas">${portas.map(([t, n, d, a, pri]) => `<button class="porta ${pri ? 'principal' : ''}" data-act="ir" data-t="${t}"><span class="rot">${a}${trancada(t) ? ' · senha do gerente' : ''}</span><b>${n}</b><span class="muted">${d}</span></button>`).join('')}</div>
+      ${API.modo === 'online' && cred.pin ? '<div class="linha-btns"><button class="btn mini leve" data-act="esquecer">Sair deste aparelho</button></div>' : ''}
       ${API.modo === 'demo' ? `<section class="bloco"><h2>Ver como cliente</h2><p class="muted">É isto que aparece quando alguém aponta a câmera para o cartão da mesa.</p>
         <div class="linha-btns"><label class="sr" for="demo-mesa">Mesa</label><select id="demo-mesa" style="max-width:180px">${mesasOpt}</select><button class="btn escuro" data-act="verCliente">Abrir tela do cliente</button></div>
         <div class="linha-btns"><button class="btn mini leve" data-act="zerarDemo">Zerar dados da demonstração</button></div></section>` : ''}
@@ -286,29 +357,51 @@
   }
 
   /* ---------- Entrada da equipe ---------- */
-  function vLogin(titulo) {
-    if (API.modo === 'online' && !S) {
-      return `${topo(titulo)}<main class="wrap login"><h1>Entrar</h1><p class="muted">Digite a senha da equipe.</p>
-        <form id="f-pin" class="bloco"><label class="campo"><span>Senha da equipe</span><input id="lg-pin" type="password" inputmode="numeric" autocomplete="current-password" required></label>
-        ${ui.loginErro ? `<p class="erro">${esc(ui.loginErro)}</p>` : ''}<button class="btn pri grande cheio">Continuar</button></form></main>`;
-    }
+  const SO_GERENTE_TELA = { caixa: true, cartoes: true };
+  function vSenha(titulo) {
+    const ger = !!SO_GERENTE_TELA[tela];
+    return `${topo(titulo)}<main class="wrap login"><h1>${ger ? 'Área do caixa' : 'Entrar'}</h1>
+      <p class="muted">${ger ? 'Abrir e fechar o caixa, receber, mexer no cardápio e ver o relatório pedem a <b>senha do gerente</b>.' : 'Digite a senha da equipe para lançar pedidos.'}</p>
+      <form id="f-pin" class="bloco"><label class="campo"><span>${ger ? 'Senha do gerente' : 'Senha da equipe'}</span><input id="lg-pin" type="password" autocomplete="current-password" autocapitalize="off" required></label>
+      ${ui.loginErro ? `<p class="erro" role="alert">${esc(ui.loginErro)}</p>` : ''}<button class="btn pri grande cheio">Entrar</button></form>
+      ${ger && S && nivel === 'equipe' ? '<button class="btn" data-act="ir" data-t="garcom">Voltar para a tela do garçom</button>' : ''}</main>`;
+  }
+  function vNome(titulo) {
     return `${topo(titulo)}<main class="wrap login"><h1>Quem é você?</h1><p class="muted">Seu nome fica marcado em cada pedido, cancelamento e pagamento.</p>
-      <div class="nomes">${S.equipe.map((n) => `<button class="btn" data-act="entrar" data-n="${esc(n)}">${esc(n)}</button>`).join('')}</div></main>`;
+      <div class="nomes">${S.equipe.map((n) => `<button class="btn" data-act="entrar" data-n="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+      ${API.modo === 'online' ? '<button class="btn leve" data-act="esquecer">Sair deste aparelho</button>' : ''}</main>`;
+  }
+  function vSemConexao(titulo) {
+    return `${topo(titulo)}<main class="wrap login"><h1>Sem conexão</h1><p class="muted">Não consegui falar com o servidor. Confira o Wi-Fi deste aparelho.</p>
+      <button class="btn pri grande" data-act="tentar">Tentar de novo</button></main>`;
+  }
+  function formSenhas(primeira) {
+    const eqPadrao = S._senhas && S._senhas.equipePadrao;
+    return `<form id="f-senhas" class="campo">
+      <label class="campo"><span>Nova senha do gerente</span><input id="sn-g" type="password" autocomplete="new-password" minlength="4" maxlength="40" ${primeira ? 'required' : ''}><small>É a senha do caixa. Mínimo de 4 caracteres.${primeira ? '' : ' Deixe vazio para não mudar.'}</small></label>
+      <label class="campo"><span>Repita a senha do gerente</span><input id="sn-g2" type="password" autocomplete="new-password" maxlength="40" ${primeira ? 'required' : ''}></label>
+      <label class="campo"><span>Nova senha da equipe</span><input id="sn-e" type="text" autocomplete="off" autocapitalize="off" minlength="4" maxlength="40"><small>É a senha do garçom e da cozinha. ${eqPadrao ? '<b>Hoje ela é a de fábrica (1234). Troque também.</b>' : 'Deixe vazio para não mudar.'}</small></label>
+      <button class="btn pri grande cheio">Salvar senhas</button></form>`;
+  }
+  function vCriarSenha(titulo) {
+    return `${topo(titulo)}<main class="wrap login"><h1>Crie a senha do gerente</h1>
+      <p class="muted">O caixa ainda está com a senha de fábrica. Crie uma senha só sua. É ela que separa o caixa do garçom.</p>
+      <div class="bloco">${formSenhas(true)}</div></main>`;
   }
 
   /* ---------- Garçom ---------- */
   function contaDoAlvo() {
     const a = ui.g.alvo;
     if (!a) return null;
-    if (a.conta) return contaPorId(a.conta) || null;
+    if (a.conta) { const c = contaPorId(a.conta); return c && c.aberta ? c : null; }
     if (a.mesa && a.mesa !== 'B') return L.contaDaMesa(S, a.mesa) || null;
     return null;
   }
   function rotuloAlvo() {
     const c = contaDoAlvo();
     if (c) return L.rotulo(c);
-    const a = ui.g.alvo;
-    return a.mesa === 'B' ? 'Balcão' + (a.nome ? ' · ' + a.nome : '') : 'Mesa ' + a.mesa;
+    const a = ui.g.alvo || {};
+    return a.mesa === 'B' ? 'Balcão' + (a.nome ? ' · ' + a.nome : '') : a.mesa ? 'Mesa ' + a.mesa : 'Conta';
   }
   function gradeMesas(opts) {
     let h = '';
@@ -335,13 +428,14 @@
     if (!ps.length) return '';
     return `<div class="prontos" role="status">${ps.map((p) => {
       const c = contaPorId(p.conta);
-      const itens = p.itens.map((id) => c && c.itens.find((i) => i.id === id)).filter((i) => i && !i.canc);
+      const itens = itensDoPedido(p);
       return `<div class="pronto"><div class="txt"><b>${esc(c ? L.rotulo(c) : p.rotulo)}</b> · ${esc(itens.map((i) => i.qtd + '× ' + i.nome).join(', '))}<br><small>pronto há ${tempo(p.ts.pronto || p.em)}</small></div>
         <button class="btn mini escuro" data-act="statusPed" data-p="${p.id}" data-s="entregue">Levei à mesa</button></div>`;
     }).join('')}</div>`;
   }
   function gMesas() {
-    return `<section class="secao"><div class="secao-cab"><h2>Mesas</h2><span class="muted">${S.contas.filter((c) => c.aberta && !L.ehBalcao(c)).length} com conta aberta</span></div>
+    return `<section class="secao"><div class="secao-cab"><h2>Mesas</h2><span class="muted">${S.contas.filter((c) => c.aberta && !L.ehBalcao(c)).length} com conta aberta</span><span class="esp"></span>
+        <button class="btn mini ${ui.som ? 'escuro' : ''}" data-act="som" aria-pressed="${ui.som}">${ui.som ? 'Som ligado' : 'Avisar com som'}</button></div>
       <div class="mesas">${gradeMesas({ act: 'abrirMesa', flag: true })}</div></section>
       <section class="secao"><div class="secao-cab"><h2>Balcão / Viagem</h2><span class="esp"></span><button class="btn pri mini" data-act="novoBalcao">Novo pedido</button></div>
       <div class="mesas">${balcaoTiles('abrirConta') || '<p class="muted">Nenhum pedido de balcão aberto.</p>'}</div></section>`;
@@ -370,9 +464,9 @@
     const c = contaDoAlvo();
     if (!c) {
       const a = ui.g.alvo || {};
-      const fechou = a.conta && S.contas.find((x) => x.id === a.conta && !x.aberta);
+      const fechou = !!a.conta;
       return `<div class="voltar"><button class="btn mini" data-act="gVoltar">← Mesas</button></div>
-        <div class="bloco" style="margin-top:14px"><h2>${fechou ? 'Conta fechada' : 'Mesa livre'}</h2><p class="muted">${fechou ? 'Essa conta já foi paga no caixa.' : 'Nenhum pedido aberto.'}</p>
+        <div class="bloco" style="margin-top:14px"><h2>${fechou ? 'Conta fechada' : 'Mesa livre'}</h2><p class="muted">${fechou ? 'Essa conta já foi paga ou fechada no caixa.' : 'Nenhum pedido aberto.'}</p>
         ${!fechou ? '<button class="btn pri grande" data-act="gMenu">Lançar pedido</button>' : ''}</div>`;
     }
     const balc = L.ehBalcao(c);
@@ -394,7 +488,7 @@
       <div class="cats" role="tablist">${cats.map((c) => `<button class="cat ${c === cat ? 'on' : ''}" data-act="cat" data-c="${esc(c)}" role="tab" aria-selected="${c === cat}">${esc(c)}</button>`).join('')}</div>
       <div class="cardapio">${ativos.filter((m) => m.cat === cat).map((m) => {
         const q = noCarrinho(m.id);
-        return `<button class="prod" data-act="tocarItem" data-m="${m.id}"><span class="n">${esc(m.nome)}${q ? `<span class="noc">${q}</span>` : ''}</span><span class="p">${brl(m.preco)}</span>
+        return `<button class="prod" data-act="tocarItem" data-m="${m.id}"><span class="n">${esc(m.nome)}${q ? `<span class="noc">${q}</span>` : ''}</span><span class="p ${m.preco > 0 ? '' : 'sem-preco'}">${precoTxt(m.preco)}</span>
           ${m.sab && m.sab.length ? `<span class="i">Sabores: ${esc(m.sab.join(', '))}</span>` : m.ing.length ? `<span class="i">${esc(m.ing.join(', '))}</span>` : ''}</button>`;
       }).join('')}</div>
       ${ui.g.cart.length ? `<div class="barra-pedido"><button class="btn pri grande" data-act="folha" data-f="cart">Ver pedido · ${ui.g.cart.reduce((a, x) => a + x.qtd, 0)} ${ui.g.cart.reduce((a, x) => a + x.qtd, 0) > 1 ? 'itens' : 'item'} · ${brl(ui.g.cart.reduce((a, x) => a + x.qtd * x.preco, 0))}</button></div>` : ''}`;
@@ -413,7 +507,7 @@
           <div class="chips">${m.ing.map((x) => `<button class="chip ${f.sem.includes(x) ? 'on' : ''}" data-act="chip" data-x="${esc(x)}" aria-pressed="${f.sem.includes(x)}">${esc(x)}</button>`).join('')}</div></div>` : ''}
         <label class="campo"><span>Alguma alteração?</span><textarea id="obs-${f.k}" placeholder="Ex.: sem ervilha, sem milho, molho à parte" maxlength="200"></textarea></label>
         <div class="qtd"><span class="rot">Quantidade</span><button class="btn" data-act="qtdItem" data-d="-1" aria-label="Menos">−</button><b>${f.qtd}</b><button class="btn" data-act="qtdItem" data-d="1" aria-label="Mais">+</button></div>
-        <button class="btn pri grande cheio" data-act="addItem">Adicionar · ${brl(m.preco * f.qtd)}</button>`;
+        <button class="btn pri grande cheio" data-act="addItem">Adicionar${m.preco > 0 ? ' · ' + brl(m.preco * f.qtd) : ''}</button>`;
     } else if (f.tipo === 'cart') {
       const tot = ui.g.cart.reduce((a, x) => a + x.qtd * x.preco, 0);
       h = `<div class="folha-cab"><h2 id="folha-t">Pedido · ${esc(rotuloAlvo())}</h2><button class="btn mini" data-act="fecharFolha">Continuar escolhendo</button></div>
@@ -438,6 +532,8 @@
     return `<div class="veu" data-act="fundoFolha"><div class="folha" role="dialog" aria-modal="true" aria-labelledby="folha-t">${h}</div></div>`;
   }
   function vGarcom() {
+    if (ui.g.vista !== 'mesas' && !ui.g.alvo) ui.g.vista = 'mesas';
+    if (ui.g.vista === 'menu' && ui.g.alvo.conta && !contaDoAlvo()) { ui.g.vista = 'conta'; ui.g.cart = []; ui.g.sheet = null; }
     const v = ui.g.vista;
     const corpo = v === 'mesas' ? gMesas() : v === 'conta' ? gConta() : gMenu();
     return `${topo('Garçom')}<main class="wrap">${prontosFaixa()}${corpo}</main>${gFolha()}`;
@@ -448,7 +544,7 @@
     const cols = [['novo', 'Novos'], ['preparando', 'Preparando'], ['pronto', 'Prontos']];
     const comanda = (p) => {
       const c = contaPorId(p.conta);
-      const itens = p.itens.map((id) => c && c.itens.find((i) => i.id === id)).filter((i) => i && !i.canc);
+      const itens = itensDoPedido(p);
       const min = minDesde(p.em);
       const tarde = p.status !== 'pronto' && min >= 15;
       const prox = { novo: ['preparando', 'Começar a preparar'], preparando: ['pronto', 'Marcar pronto'], pronto: ['entregue', 'Entregue'] }[p.status];
@@ -485,6 +581,8 @@
         <button class="btn perigo" data-act="fecharCaixa">Sim, fechar</button><button class="btn" data-act="confFechar" data-v="0">Não</button>`
         : '<button class="btn escuro" data-act="confFechar" data-v="1">Fechar caixa</button>'}</div>`;
   }
+  // Muda quando o valor a receber muda, para o campo de valor nunca ficar com um número velho
+  const chavePag = (c) => c.id + '-' + c.pags.length + '-' + Math.round(L.restante(c) * 100);
   function cxPainel() {
     const c = contaPorId(ui.cx.sel);
     if (!c) return '<div class="painel bloco"><h2>Escolha uma mesa</h2><p class="muted">Toque numa mesa laranja para ver a conta e receber.</p></div>';
@@ -494,7 +592,7 @@
         <button class="btn" data-act="cxSel" data-c="">Fechar</button></div>`;
     }
     const rest = L.restante(c);
-    const key = c.id + '-' + c.pags.length;
+    const key = chavePag(c);
     const total = L.total(c);
     return `<div class="painel">
       <div class="secao-cab"><h2>${esc(L.rotulo(c))}</h2><span class="esp"></span><button class="btn mini" data-act="imprimirConta" data-c="${c.id}">Imprimir conta</button></div>
@@ -502,7 +600,7 @@
       ${c.pags.length ? `<div class="pags">${c.pags.map((p) => `<div class="pag"><span>${p.forma}</span><span class="muted">${hora(p.t)} · ${esc(p.por)}</span><span class="esp"></span><span class="valor">${brl(p.valor)}</span>
         ${ui.cx.conf === 'pag-' + p.id ? `<button class="btn mini perigo" data-act="removerPag" data-c="${c.id}" data-p="${p.id}">Remover</button><button class="btn mini" data-act="naoCancel">Não</button>` : `<button class="btn mini leve" data-act="pedirRemPag" data-p="${p.id}" aria-label="Remover pagamento">×</button>`}</div>`).join('')}</div>` : ''}
       <div class="restante"><span>Falta receber</span><b>${brl(rest)}</b></div>
-      ${!S.turno ? '<p class="aviso-pag">Abra o caixa (acima) para registrar o pagamento.</p>' : total === 0 ? `<button class="btn" data-act="liberar" data-c="${c.id}">Liberar mesa sem consumo</button>` : `
+      ${total > 0 && !S.turno ? '<p class="aviso-pag">Abra o caixa (acima) para registrar o pagamento.</p>' : total === 0 ? `<p class="muted">Esta conta não tem valor a cobrar.</p><button class="btn" data-act="liberar" data-c="${c.id}">${L.vivos(c).length ? 'Fechar conta sem valor' : 'Liberar mesa sem consumo'}</button>` : `
       <form id="f-pagar" class="bloco" data-c="${c.id}">
         <div class="duas"><label class="campo"><span>Dividir a conta</span><input id="dv-${key}" type="number" min="1" max="30" value="2" inputmode="numeric"></label>
           <div class="campo"><span>Cada pessoa paga</span><button type="button" class="btn" data-act="usarDiv" data-k="${key}" data-r="${rest}" id="dv-out">${brl(rest / 2)}</button></div></div>
@@ -516,11 +614,30 @@
       <button class="btn" data-act="cxLancar" data-c="${c.id}">+ Lançar itens nesta conta</button>
     </div>`;
   }
+  function avisoPrecos() {
+    const n = S.menu.filter((m) => m.ativo && !(m.preco > 0)).length;
+    if (!n) return '';
+    return `<div class="aviso-pag aviso-linha"><span><b>${n} ${n > 1 ? 'itens do cardápio estão' : 'item do cardápio está'} sem preço.</b> Enquanto isso, ${n > 1 ? 'eles entram' : 'ele entra'} na conta valendo R$ 0,00.</span><button class="btn mini escuro" data-act="aba" data-t="cardapio">Preencher preços</button></div>`;
+  }
+  function cxPedidos() {
+    const ps = S.pedidos.filter((p) => EM_ANDAMENTO.includes(p.status)).sort((a, b) => a.em - b.em);
+    if (!ps.length) return '';
+    const nomeSt = { novo: 'na fila', preparando: 'preparando', pronto: 'pronto' };
+    return `<section class="secao"><div class="secao-cab"><h2>Pedidos na cozinha</h2><span class="muted">Imprima aqui a via da cozinha.</span></div>
+      <div class="itens">${ps.map((p) => {
+        const c = contaPorId(p.conta);
+        const imp = ui.impressos.has(p.id);
+        return `<div class="prod-ed"><div><b>${esc(c ? L.rotulo(c) : p.rotulo)}</b> <span class="st ${p.status}">${nomeSt[p.status]}</span> <span class="muted">${hora(p.em)} · ${esc(p.por)}</span>
+          <div class="i">${esc(itensDoPedido(p).map((i) => i.qtd + '× ' + i.nome).join(', '))}</div></div>
+          <div class="linha-btns"><button class="btn mini ${imp ? '' : 'escuro'}" data-act="imprimirPed" data-p="${p.id}">${imp ? 'Imprimir de novo' : 'Imprimir'}</button></div></div>`;
+      }).join('')}</div></section>`;
+  }
   function cxMesas() {
     return `<div class="cx"><div>
       <section class="secao"><div class="secao-cab"><h2>Mesas</h2></div><div class="mesas">${gradeMesas({ act: 'cxMesa', sel: (i, c) => c && c.id === ui.cx.sel })}</div></section>
       <section class="secao"><div class="secao-cab"><h2>Balcão / Viagem</h2><span class="esp"></span><button class="btn mini pri" data-act="cxBalcao">Novo pedido</button></div>
         <div class="mesas">${balcaoTiles('cxSel', ui.cx.sel) || '<p class="muted">Nenhum pedido de balcão aberto.</p>'}</div></section>
+      ${cxPedidos()}
       ${(() => { const fech = S.contas.filter((c) => !c.aberta).sort((a, b) => b.fechadaEm - a.fechadaEm); return fech.length ? `<section class="secao"><h2>Pagas neste caixa</h2>
         <div class="tabela-wrap"><table><thead><tr><th>Conta</th><th>Fechada</th><th>Forma</th><th class="d">Total</th></tr></thead><tbody>
         ${fech.map((c) => `<tr><td><button class="btn mini leve" data-act="cxSel" data-c="${c.id}">${esc(L.rotulo(c))}</button></td><td>${hora(c.fechadaEm)}</td><td>${esc(Array.from(new Set(c.pags.map((p) => p.forma))).join(' + ') || '—')}</td><td class="d">${brl(L.total(c))}</td></tr>`).join('')}
@@ -529,11 +646,12 @@
   }
   function cxRelatorio() {
     const r = L.relatorio(S);
-    const hist = S.turnos;
+    const hist = API.modo === 'demo' ? S.turnos : ui.cx.turnos;
     let atual = '<div class="bloco"><h2>Caixa fechado</h2><p class="muted">Abra o caixa para começar a contar as vendas.</p></div>';
     if (r) {
       const max = Math.max(1, ...r.itens.map((i) => i.qtd));
-      atual = `<div class="kpis">
+      atual = `<div class="secao-cab"><h2>Caixa de agora</h2><span class="muted">aberto em ${dataHora(S.turno.abertoEm)}</span><span class="esp"></span><button class="btn mini" data-act="imprimirResumo">Imprimir parcial</button></div>
+      <div class="kpis">
         <div class="kpi destaque"><span class="rot">Recebido neste caixa</span><b>${brl(r.total)}</b></div>
         ${FORMAS.map((f) => `<div class="kpi"><span class="rot">${f}</span><b>${brl(r.porForma[f] || 0)}</b></div>`).join('')}
       </div>
@@ -549,8 +667,8 @@
       </div>`;
     }
     return `<div class="secao">${atual}
-      <section class="secao"><h2>Caixas anteriores</h2>${hist.length ? `<div class="tabela-wrap"><table><thead><tr><th>Abertura</th><th>Fechamento</th><th>Quem</th>${FORMAS.map((f) => `<th class="d">${f}</th>`).join('')}<th class="d">Total</th></tr></thead><tbody>
-        ${hist.map((t) => `<tr><td>${dataHora(t.abertoEm)}</td><td>${dataHora(t.fechadoEm)}</td><td>${esc(t.abertoPor)} / ${esc(t.fechadoPor)}</td>${FORMAS.map((f) => `<td class="d">${fmt(t.resumo.porForma[f] || 0)}</td>`).join('')}<td class="d"><b>${brl(t.resumo.total)}</b></td></tr>`).join('')}
+      <section class="secao"><h2>Caixas anteriores</h2>${!hist ? '<p class="muted">Carregando…</p>' : hist.length ? `<div class="tabela-wrap"><table><thead><tr><th>Abertura</th><th>Fechamento</th><th>Quem</th>${FORMAS.map((f) => `<th class="d">${f}</th>`).join('')}<th class="d">Total</th><th></th></tr></thead><tbody>
+        ${hist.map((t) => `<tr><td>${dataHora(t.abertoEm)}</td><td>${dataHora(t.fechadoEm)}</td><td>${esc(t.abertoPor)} / ${esc(t.fechadoPor)}</td>${FORMAS.map((f) => `<td class="d">${fmt(t.resumo.porForma[f] || 0)}</td>`).join('')}<td class="d"><b>${brl(t.resumo.total)}</b></td><td><button class="btn mini" data-act="imprimirTurno" data-id="${esc(t.id)}">Imprimir</button></td></tr>`).join('')}
         </tbody></table></div>` : '<p class="muted">Quando você fechar o primeiro caixa, ele aparece aqui.</p>'}</section></div>`;
   }
   function cxCardapio() {
@@ -558,10 +676,11 @@
     const m = e && e !== 'novo' ? S.menu.find((x) => x.id === e) : null;
     const k = e ? (m ? m.id : 'novo') : '';
     const cats = Array.from(new Set(S.menu.map((x) => x.cat)));
+    const semPreco = S.menu.filter((x) => !(x.preco > 0)).length;
     const form = e ? `<form id="f-menu" class="bloco" data-id="${m ? m.id : ''}"><h2>${m ? 'Editar ' + esc(m.nome) : 'Novo item'}</h2>
       <div class="ed">
         <label class="campo"><span>Nome</span><input id="me-nome-${k}" type="text" value="${esc(m ? m.nome : '')}" required maxlength="60"></label>
-        <label class="campo"><span>Categoria</span><input id="me-cat-${k}" type="text" list="cats" value="${esc(m ? m.cat : 'Lanches')}" maxlength="30"><datalist id="cats">${cats.map((c) => `<option value="${esc(c)}">`).join('')}</datalist></label>
+        <label class="campo"><span>Categoria</span><input id="me-cat-${k}" type="text" list="cats" value="${esc(m ? m.cat : (cats[0] || 'Lanches'))}" maxlength="30"><datalist id="cats">${cats.map((c) => `<option value="${esc(c)}">`).join('')}</datalist></label>
         <label class="campo"><span>Preço (R$)</span><input id="me-preco-${k}" type="text" inputmode="decimal" value="${m ? fmt(m.preco) : ''}" required></label>
         <label class="campo larga"><span>Ingredientes que dá para tirar</span><input id="me-ing-${k}" type="text" value="${esc(m ? m.ing.join(', ') : '')}" placeholder="Ex.: Milho, Ervilha, Tomate"><small>Separe por vírgula. Viram os botões que o garçom toca.</small></label>
         <label class="campo larga"><span>Sabores (o garçom escolhe um)</span><input id="me-sab-${k}" type="text" value="${esc(m && m.sab ? m.sab.join(', ') : '')}" placeholder="Ex.: Carne, Frango, Queijo"><small>Deixe vazio se o item não tem sabor.</small></label>
@@ -570,10 +689,10 @@
       </div>
       <div class="linha-btns"><button class="btn pri">Salvar item</button><button type="button" class="btn" data-act="editMenu" data-m="">Cancelar</button>
       ${m ? (ui.cx.conf === 'menu-' + m.id ? `<span class="esp"></span><b>Remover do cardápio?</b><button type="button" class="btn perigo" data-act="removerMenu" data-m="${m.id}">Remover</button>` : `<span class="esp"></span><button type="button" class="btn leve" data-act="pedirRemMenu" data-m="${m.id}">Remover item</button>`) : ''}</div></form>` : '';
-    return `<div class="secao"><div class="secao-cab"><h2>Cardápio</h2><span class="muted">Preços de exemplo. Troque pelos seus.</span><span class="esp"></span>${!e ? '<button class="btn pri" data-act="editMenu" data-m="novo">+ Novo item</button>' : ''}</div>
+    return `<div class="secao"><div class="secao-cab"><h2>Cardápio</h2><span class="muted">${semPreco ? `${semPreco} ${semPreco > 1 ? 'itens' : 'item'} sem preço. Clique em Editar para preencher.` : 'O que você muda aqui vale na hora para o garçom e para o cliente.'}</span><span class="esp"></span>${!e ? '<button class="btn pri" data-act="editMenu" data-m="novo">+ Novo item</button>' : ''}</div>
       ${form}
       ${cats.map((c) => `<section class="secao"><h3>${esc(c)}</h3><div class="itens">${S.menu.filter((x) => x.cat === c).map((x) => `<div class="prod-ed ${x.ativo ? '' : 'off'}">
-        <div><b>${esc(x.nome)}</b> <span class="valor">· ${brl(x.preco)}</span> ${x.cozinha ? '<span class="pill lar">cozinha</span>' : ''} ${x.ativo ? '' : '<span class="pill warn">em falta</span>'}
+        <div><b>${esc(x.nome)}</b> ${x.preco > 0 ? `<span class="valor">· ${brl(x.preco)}</span>` : '<span class="pill bad">sem preço</span>'} ${x.cozinha ? '<span class="pill lar">cozinha</span>' : ''} ${x.ativo ? '' : '<span class="pill warn">em falta</span>'}
         ${x.sab && x.sab.length ? `<div class="i">Sabores: ${esc(x.sab.join(', '))}</div>` : ''}${x.ing.length ? `<div class="i">${esc(x.ing.join(', '))}</div>` : ''}</div>
         <div class="linha-btns"><button class="btn mini" data-act="ativoMenu" data-m="${x.id}">${x.ativo ? 'Marcar em falta' : 'Voltou'}</button><button class="btn mini escuro" data-act="editMenu" data-m="${x.id}">Editar</button></div></div>`).join('')}</div></section>`).join('')}</div>`;
   }
@@ -586,9 +705,16 @@
         <button class="btn pri">Salvar</button></form>
       <div class="bloco"><h2>Logo</h2><div class="linha-btns" style="align-items:center">${logoHtml(S.cfg, 'lg')}<label class="btn"><input id="aj-logo" type="file" accept="image/*" class="sr">Escolher imagem</label></div>
         <p class="muted">Aparece no topo, na tela do cliente e nos cartões das mesas. PNG com fundo transparente fica melhor.</p></div>
-      <div class="bloco"><h2>Equipe</h2><div class="pags">${S.equipe.map((n) => `<div class="pag"><b>${esc(n)}</b><span class="esp"></span><button class="btn mini leve" data-act="remEquipe" data-n="${esc(n)}">Remover</button></div>`).join('')}</div>
+      <div class="bloco"><h2>Equipe</h2><div class="pags">${S.equipe.map((n) => `<div class="pag"><b>${esc(n)}</b><span class="esp"></span>${ui.cx.conf === 'eq-' + n
+          ? `<button class="btn mini perigo" data-act="remEquipe" data-n="${esc(n)}">Remover</button><button class="btn mini" data-act="naoCancel">Não</button>`
+          : `<button class="btn mini leve" data-act="pedirRemEquipe" data-n="${esc(n)}">Remover</button>`}</div>`).join('')}</div>
         <form id="f-equipe" class="linha-btns"><label class="sr" for="aj-novo">Novo nome</label><input id="aj-novo" type="text" placeholder="Nome" maxlength="30" style="flex:1;min-width:140px"><button class="btn escuro">Adicionar</button></form>
-        <p class="muted">${API.modo === 'online' ? 'A senha da equipe fica no Netlify (variável EQUIPE_PIN).' : 'No Netlify, todos entram com uma senha da equipe que você define.'}</p></div>
+        <p class="muted">Cada pessoa escolhe o próprio nome ao entrar. O nome fica marcado nos pedidos.</p></div>
+      ${API.modo === 'online' ? `<div class="bloco"><h2>Senhas</h2>
+        <p class="muted">Com a <b>senha da equipe</b>, o garçom e a cozinha só lançam e acompanham pedidos. Abrir e fechar o caixa, receber, cardápio e relatório pedem a <b>senha do gerente</b>.</p>
+        ${formSenhas(false)}</div>
+      <div class="bloco"><h2>Este aparelho</h2><p class="muted">Use se este aparelho for trocar de dono. Ele volta a pedir a senha.</p>
+        <button class="btn" data-act="esquecer">Sair deste aparelho</button></div>` : ''}
       ${API.modo === 'demo' ? '<div class="bloco"><h2>Demonstração</h2><p class="muted">Apaga os pedidos de teste e volta ao cardápio de exemplo.</p><button class="btn" data-act="zerarDemo">Zerar demonstração</button></div>' : ''}
     </div>`;
   }
@@ -607,7 +733,7 @@
         <div class="cats" role="tablist">${cats.map((c) => `<button class="cat ${c === cat ? 'on' : ''}" data-act="cxCat" data-c="${esc(c)}" role="tab" aria-selected="${c === cat}">${esc(c)}</button>`).join('')}</div>
         <div class="vr-grade">${ativos.filter((m) => m.cat === cat).map((m) => {
           const q = qtdDe(m.id);
-          return `<button class="prod" data-act="tocarItem" data-m="${m.id}"><span class="n">${esc(m.nome)}${q ? `<span class="noc">${q}</span>` : ''}</span><span class="p">${brl(m.preco)}</span>
+          return `<button class="prod" data-act="tocarItem" data-m="${m.id}"><span class="n">${esc(m.nome)}${q ? `<span class="noc">${q}</span>` : ''}</span><span class="p ${m.preco > 0 ? '' : 'sem-preco'}">${precoTxt(m.preco)}</span>
             ${m.sab && m.sab.length ? `<span class="i">${esc(m.sab.join(', '))}</span>` : ''}</button>`;
         }).join('')}</div>
         ${vendas.length ? `<section class="secao"><h3>Últimas vendas no balcão</h3><div class="tabela-wrap"><table><thead><tr><th>Hora</th><th>Itens</th><th>Forma</th><th class="d">Total</th><th></th></tr></thead><tbody>
@@ -636,6 +762,7 @@
     const corpo = t === 'mesas' ? cxMesas() : t === 'balcao' ? cxVendaRapida() : t === 'relatorio' ? cxRelatorio() : t === 'cardapio' ? cxCardapio() : cxAjustes();
     return `${topo('Caixa')}<main class="wrap">${cxTurno()}
       <nav class="abas" aria-label="Seções do caixa">${abas.map(([k, n]) => `<button class="aba ${t === k ? 'on' : ''}" data-act="aba" data-t="${k}">${n}</button>`).join('')}<button class="aba" data-act="ir" data-t="cartoes">Cartões das mesas</button></nav>
+      ${t === 'mesas' || t === 'balcao' ? avisoPrecos() : ''}
       ${corpo}</main>`;
   }
 
@@ -655,10 +782,9 @@
 
   /* ---------- Cliente ---------- */
   function vCliente() {
-    if (!cliente) {
-      return `<main class="wrap cli"><h1>${cliente === null ? 'Carregando…' : ''}</h1></main>`;
-    }
-    if (cliente.erro) return `<main class="wrap cli"><h1>Mesa não encontrada</h1><p class="muted">Peça ajuda ao garçom.</p></main>`;
+    if (!cliente) return '<main class="wrap cli"><p class="muted">Carregando…</p></main>';
+    if (cliente.erro === 'rede') return '<main class="wrap cli"><h1>Sem conexão</h1><p class="muted">Confira a internet do celular. A página tenta de novo sozinha.</p></main>';
+    if (cliente.erro) return '<main class="wrap cli"><h1>Mesa não encontrada</h1><p class="muted">Aponte a câmera de novo para o cartão da mesa ou peça ajuda ao garçom.</p></main>';
     const d = cliente;
     const cats = Array.from(new Set(d.menu.map((m) => m.cat)));
     const c = d.conta;
@@ -673,11 +799,17 @@
           <p class="aviso-pag">Para pagar, chame a gente ou vá até o caixa. Aceitamos débito, crédito, Pix e dinheiro.</p>`
           : '<div class="itens"><p class="vazio">Nenhum pedido nesta mesa ainda. Chame o garçom quando quiser pedir.</p></div>'}
         </section>
-        <section class="cli-menu"><h2>Cardápio</h2>${cats.map((ct) => `<div class="cli-cat"><h3>${esc(ct)}</h3>${d.menu.filter((m) => m.cat === ct).map((m) => `<div class="cli-prod"><b>${esc(m.nome)}</b><span class="p">${brl(m.preco)}</span>${m.sab && m.sab.length ? `<span class="i">${esc(m.sab.join(' · '))}</span>` : m.ing.length ? `<span class="i">${esc(m.ing.join(', '))}</span>` : ''}</div>`).join('')}</div>`).join('')}</section>
+        <section class="cli-menu"><h2>Cardápio</h2>${cats.map((ct) => `<div class="cli-cat"><h3>${esc(ct)}</h3>${d.menu.filter((m) => m.cat === ct).map((m) => `<div class="cli-prod"><b>${esc(m.nome)}</b><span class="p">${m.preco > 0 ? brl(m.preco) : ''}</span>${m.sab && m.sab.length ? `<span class="i">${esc(m.sab.join(' · '))}</span>` : m.ing.length ? `<span class="i">${esc(m.ing.join(', '))}</span>` : ''}</div>`).join('')}</div>`).join('')}</section>
       </main>`;
   }
   async function carregarCliente() {
-    try { const d = await API.mesa(codigoMesa); cliente = d || { erro: true }; } catch (e) { if (!cliente) cliente = { erro: true }; }
+    try {
+      const d = await API.mesa(codigoMesa, cliente && !cliente.erro ? cliente.v : 0);
+      if (d === 'igual') cliente.t = Date.now();
+      else cliente = d || { erro: 'mesa' };
+    } catch (e) {
+      if (!cliente || cliente.erro) cliente = { erro: 'rede' };
+    }
     render();
   }
 
@@ -698,7 +830,14 @@
     if (tela === 'cliente') return vCliente();
     if (ui.carregando) return '<main class="wrap login"><p class="muted">Carregando…</p></main>';
     if (tela === 'inicio') return vInicio();
-    if (!S || !sessao || (S.equipe.indexOf(sessao.nome) === -1)) return vLogin(TELAS_EQUIPE[tela]);
+    const titulo = TELAS_EQUIPE[tela];
+    if (API.modo === 'online') {
+      if (!cred.pin) return vSenha(titulo);
+      if (!S) return ui.offline ? vSemConexao(titulo) : vSenha(titulo);
+      if (SO_GERENTE_TELA[tela] && nivel !== 'gerente') return vSenha(titulo);
+      if (SO_GERENTE_TELA[tela] && S._senhas && S._senhas.trocarGerente) return vCriarSenha(titulo);
+    }
+    if (!sessao || S.equipe.indexOf(sessao.nome) === -1) return vNome(titulo);
     if (tela === 'garcom') return vGarcom();
     if (tela === 'cozinha') return vCozinha();
     if (tela === 'caixa') return vCaixa() + gFolhaCaixa();
@@ -706,8 +845,11 @@
     return vInicio();
   }
   function gFolhaCaixa() { return ui.g.sheet && (ui.g.sheet.tipo === 'balcao' || (ui.g.sheet.tipo === 'item' && noBalcao())) ? gFolha() : ''; }
+  const ROLAVEIS = '.folha, .cats, .abas, .tabela-wrap';
+  let vistaAnterior = '';
   function render() {
     const app = $('#app');
+    renderPendente = false;
     const vals = {};
     app.querySelectorAll('input[id], textarea[id], select[id]').forEach((el) => {
       if (el.type === 'file') return;
@@ -715,12 +857,18 @@
     });
     const ae = document.activeElement;
     const foco = ae && ae.id && app.contains(ae) ? { id: ae.id, s: ae.selectionStart, e: ae.selectionEnd } : null;
+    const rolagem = Array.from(app.querySelectorAll(ROLAVEIS)).map((el) => [el.scrollTop, el.scrollLeft]);
+    const chave = [tela, ui.g.vista, ui.cx.tab, ui.g.sheet ? ui.g.sheet.tipo + (ui.g.sheet.k || '') : '', ui.previa ? 'p' : ''].join('|');
     app.innerHTML = vista() + (S ? vPrevia() : '');
     Object.keys(vals).forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
       if (el.type === 'checkbox') el.checked = vals[id]; else el.value = vals[id];
     });
+    if (chave === vistaAnterior) {
+      app.querySelectorAll(ROLAVEIS).forEach((el, i) => { if (rolagem[i]) { el.scrollTop = rolagem[i][0]; el.scrollLeft = rolagem[i][1]; } });
+    }
+    vistaAnterior = chave;
     if (foco) {
       const el = document.getElementById(foco.id);
       if (el) { el.focus({ preventScroll: true }); try { if (foco.s != null) el.setSelectionRange(foco.s, foco.e); } catch (e) { /* ok */ } }
@@ -754,17 +902,23 @@
 
   /* ---------- Ações ---------- */
   const A = {
-    ir(d) { ir(d.t); },
+    ir(d) {
+      // Entrar no garçom pelo início sempre abre o mapa das mesas (a não ser que haja um pedido pela metade)
+      if (d.t === 'garcom' && !ui.g.cart.length) { ui.g.vista = 'mesas'; ui.g.alvo = null; ui.g.sheet = null; ui.voltarCaixa = false; }
+      ir(d.t);
+    },
     sair() { sessao = null; guarda.set('sessao', null); render(); },
-    async entrar(d) {
-      sessao = { nome: d.n, pin: API.pin() };
+    esquecer() { sessao = null; guarda.set('sessao', null); tela = 'inicio'; guarda.set('tela', 'inicio'); try { history.replaceState(null, '', location.pathname); } catch (e) { /* ok */ } deslogar(); },
+    tentar() { agendarPoll(true); toast('Tentando de novo…'); },
+    entrar(d) {
+      sessao = { nome: d.n };
       guarda.set('sessao', sessao);
       guarda.set('tela', tela);
       render();
     },
     verCliente() { const n = $('#demo-mesa').value; codigoMesa = S.codes[n]; tela = 'cliente'; cliente = null; carregarCliente(); window.scrollTo(0, 0); },
     sairCliente() { tela = 'inicio'; render(); },
-    zerarDemo() { API.demo = L.seed(); guarda.set('demo-estado-v3', API.demo); S = API.demo; ui.g = { vista: 'mesas', alvo: null, cart: [], cat: null, sheet: null, conf: null }; ui.cx.sel = null; toast('Demonstração zerada.'); render(); },
+    zerarDemo() { API.demo = L.seed(); guarda.set(CHAVE_DEMO, API.demo); S = API.demo; ui.g = { vista: 'mesas', alvo: null, cart: [], cat: null, sheet: null, conf: null }; ui.cx.sel = null; toast('Demonstração zerada.'); render(); },
     // garçom
     abrirMesa(d) {
       const c = L.contaDaMesa(S, d.m);
@@ -774,10 +928,15 @@
       window.scrollTo(0, 0); render();
     },
     abrirConta(d) { ui.g.alvo = { conta: d.c }; ui.g.cart = []; ui.g.vista = 'conta'; window.scrollTo(0, 0); render(); },
-    gVoltar() { ui.voltarCaixa = false; ui.g.vista = 'mesas'; ui.g.alvo = null; ui.g.cart = []; render(); },
+    gVoltar() {
+      const paraCaixa = ui.voltarCaixa;
+      ui.voltarCaixa = false; ui.g.vista = 'mesas'; ui.g.alvo = null; ui.g.cart = []; ui.g.sheet = null;
+      if (paraCaixa) ir('caixa'); else render();
+    },
     gVoltarConta() {
       if (ui.g.cart.length && !ui.g.avisouVoltar) { ui.g.avisouVoltar = true; toast('Tem itens no pedido. Toque de novo para descartar.'); setTimeout(() => { ui.g.avisouVoltar = false; }, 3000); return; }
       ui.g.avisouVoltar = false; ui.g.cart = [];
+      if (ui.voltarCaixa) { A.gVoltar(); return; }
       if (contaDoAlvo()) ui.g.vista = 'conta'; else { ui.g.vista = 'mesas'; ui.g.alvo = null; }
       render();
     },
@@ -792,11 +951,12 @@
       if (!noBalcao()) toast(`+1 ${m.nome}`);
       render();
     },
-    sabor(d) { ui.g.sheet.sab = d.x; render(); },
-    chip(d) { const f = ui.g.sheet; const i = f.sem.indexOf(d.x); if (i >= 0) f.sem.splice(i, 1); else f.sem.push(d.x); render(); },
-    qtdItem(d) { const f = ui.g.sheet; f.qtd = Math.max(1, Math.min(30, f.qtd + Number(d.d))); render(); },
+    sabor(d) { if (!ui.g.sheet) return; ui.g.sheet.sab = d.x; render(); },
+    chip(d) { const f = ui.g.sheet; if (!f) return; const i = f.sem.indexOf(d.x); if (i >= 0) f.sem.splice(i, 1); else f.sem.push(d.x); render(); },
+    qtdItem(d) { const f = ui.g.sheet; if (!f) return; f.qtd = Math.max(1, Math.min(30, f.qtd + Number(d.d))); render(); },
     addItem() {
-      const f = ui.g.sheet; const m = S.menu.find((x) => x.id === f.mid);
+      const f = ui.g.sheet; const m = f && S.menu.find((x) => x.id === f.mid);
+      if (!m) { ui.g.sheet = null; render(); return; }
       if (m.sab && m.sab.length && !f.sab) { toast('Escolha o sabor primeiro.', 'erro'); return; }
       const obs = ($('#obs-' + f.k) || {}).value || '';
       addCart(m, f.qtd, f.sem.slice(), obs.trim(), f.sab);
@@ -828,25 +988,58 @@
       const c = c0 || (a.mesa === 'B' ? contaPorId(r.id + 'c') : L.contaDaMesa(S, a.mesa));
       ui.g.cart = []; ui.g.sheet = null;
       if (c) ui.g.alvo = { conta: c.id };
-      ui.g.vista = tela === 'caixa' ? 'mesas' : 'conta';
+      ui.g.vista = c ? 'conta' : 'mesas';
       toast(temCoz ? 'Pedido enviado para a cozinha.' : 'Itens lançados na conta.', 'ok');
-      if (ui.voltarCaixa) { ui.voltarCaixa = false; if (c) ui.cx.sel = c.id; ir('caixa'); return; }
+      if (ui.voltarCaixa) { ui.voltarCaixa = false; ui.g.vista = 'mesas'; ui.g.alvo = null; if (c) ui.cx.sel = c.id; ui.cx.tab = 'mesas'; ir('caixa'); return; }
       window.scrollTo(0, 0); render();
     },
     pedirCancel(d) { ui.g.conf = d.i; ui.cx.conf = d.i; render(); },
     naoCancel() { ui.g.conf = null; ui.cx.conf = null; render(); },
-    async cancelarItem(d) { ui.g.conf = null; ui.cx.conf = null; if (await fazer('cancelarItem', { conta: d.c, item: d.i })) toast('Item cancelado.'); },
+    async cancelarItem(d) {
+      ui.g.conf = null; ui.cx.conf = null;
+      if (!(await fazer('cancelarItem', { conta: d.c, item: d.i }))) return;
+      const c = contaPorId(d.c);
+      if (c && c.aberta) { toast('Item cancelado.'); return; }
+      toast('Item cancelado. A conta ficou sem itens e foi fechada.');
+      if (tela === 'garcom') { ui.g.vista = 'mesas'; ui.g.alvo = null; } else ui.cx.sel = null;
+      render();
+    },
     async juntar(d) { const c = contaDoAlvo(); ui.g.sheet = null; if (c && await fazer('juntar', { conta: c.id, mesa: d.m })) toast('Mesas juntas.', 'ok'); },
     async trocar(d) { const c = contaDoAlvo(); ui.g.sheet = null; if (c && await fazer('trocar', { conta: c.id, mesa: d.m })) toast(`Conta movida para a mesa ${d.m}.`, 'ok'); },
     async separar(d) { const c = contaDoAlvo(); if (c && await fazer('separar', { conta: c.id, mesa: d.m })) toast(`Mesa ${d.m} separada.`); },
     async statusPed(d) { await fazer('status', { pedido: d.p, status: d.s }); },
-    imprimirPed(d) { const p = S.pedidos.find((x) => x.id === d.p); if (p) imprimir(ticketCozinha(p)); },
+    imprimirPed(d) {
+      const p = S.pedidos.find((x) => x.id === d.p);
+      if (!p) return;
+      ui.impressos.add(p.id);
+      guarda.set('impressos', Array.from(ui.impressos).slice(-400));
+      imprimir(ticketCozinha(p));
+      if (API.modo !== 'demo') render();
+    },
+    imprimirResumo() { const r = L.relatorio(S); if (r) imprimir(ticketResumo(S.turno, r)); },
+    imprimirTurno(d) {
+      const lista = (API.modo === 'demo' ? S.turnos : ui.cx.turnos) || [];
+      const t = lista.find((x) => x.id === d.id);
+      if (t) imprimir(ticketResumo(t, t.resumo));
+    },
     som() { ui.som = !ui.som; if (ui.som) bip(1); render(); },
     fecharPrevia(d, el, e) { if (e.target === el || el.tagName === 'BUTTON') { ui.previa = null; render(); } },
     // caixa
-    aba(d) { ui.cx.tab = d.t; ui.cx.edit = null; render(); },
-    confFechar(d) { ui.cx.confFechar = d.v === '1'; render(); },
-    async fecharCaixa() { ui.cx.confFechar = false; if (await fazer('fecharCaixa', {})) { ui.cx.sel = null; ui.cx.tab = 'relatorio'; toast('Caixa fechado. O resumo está em “Caixas anteriores”.', 'ok'); render(); } },
+    aba(d) { ui.cx.tab = d.t; ui.cx.edit = null; ui.cx.conf = null; ui.cx.confFechar = false; if (d.t === 'relatorio') carregarTurnos(); window.scrollTo(0, 0); render(); },
+    confFechar(d) {
+      ui.cx.confFechar = d.v === '1';
+      render();
+      // Antes de fechar, busca na hora o que os garçons acabaram de lançar
+      if (ui.cx.confFechar) { ultimoPoll = 0; agendarPoll(true); }
+    },
+    async fecharCaixa() {
+      ui.cx.confFechar = false;
+      if (!(await fazer('fecharCaixa', {}))) return;
+      ui.cx.sel = null; ui.cx.tab = 'relatorio';
+      toast('Caixa fechado. O resumo está em “Caixas anteriores”.', 'ok');
+      render();
+      carregarTurnos();
+    },
     cxMesa(d) { const c = L.contaDaMesa(S, d.m); if (!c) { toast(`Mesa ${d.m} está livre.`); return; } ui.cx.sel = c.id; ui.cx.conf = null; render(); },
     cxSel(d) { ui.cx.sel = d.c || null; ui.cx.conf = null; render(); },
     forma(d) { ui.cx.forma = d.f; render(); },
@@ -868,7 +1061,8 @@
     pedirRemMenu(d) { ui.cx.conf = 'menu-' + d.m; render(); },
     async removerMenu(d) { if (await fazer('menuRemover', { mid: d.m })) { ui.cx.edit = null; toast('Item removido.'); render(); } },
     async ativoMenu(d) { const m = S.menu.find((x) => x.id === d.m); if (m) await fazer('menuSalvar', { item: Object.assign({}, m, { ativo: !m.ativo }) }); },
-    async remEquipe(d) { await fazer('equipeSalvar', { equipe: S.equipe.filter((n) => n !== d.n) }); },
+    pedirRemEquipe(d) { ui.cx.conf = 'eq-' + d.n; render(); },
+    async remEquipe(d) { ui.cx.conf = null; await fazer('equipeSalvar', { equipe: S.equipe.filter((n) => n !== d.n) }); },
     imprimirCartoes() { imprimirCartoes(); },
     async copiar(d, el) {
       try { await navigator.clipboard.writeText(d.v); toast('Link copiado.'); }
@@ -884,9 +1078,38 @@
 
   const FORMS = {
     async 'f-pin'() {
-      const pin = $('#lg-pin').value.trim();
-      try { const s = await API.estado(null, pin); API._pin = pin; ui.loginErro = ''; S = s; render(); }
-      catch (e) { ui.loginErro = e.code === 401 ? 'Senha incorreta. Confira com o Jean.' : 'Sem conexão. Confira a internet.'; render(); }
+      const campo = $('#lg-pin');
+      const pin = campo.value.trim();
+      if (!pin) return;
+      try {
+        const s = await API.estado(null, pin);
+        cred = { pin }; guarda.set('cred', cred);
+        S = s; ui.offline = false;
+        const faltaGerente = SO_GERENTE_TELA[tela] && nivel !== 'gerente';
+        ui.loginErro = faltaGerente ? 'Essa é a senha da equipe. O caixa pede a senha do gerente.' : '';
+        campo.value = '';
+        ultimaMudanca = Date.now();
+        render();
+        agendarPoll();
+        if (!faltaGerente && tela === 'caixa' && ui.cx.tab === 'relatorio') carregarTurnos();
+      } catch (e) {
+        ui.loginErro = e.code === 401 ? 'Senha incorreta.' : 'Sem conexão. Confira a internet e tente de novo.';
+        if (e.code === 401) campo.value = '';
+        render();
+      }
+    },
+    async 'f-senhas'() {
+      const g = $('#sn-g').value.trim(); const g2 = $('#sn-g2').value.trim(); const e = $('#sn-e').value.trim();
+      if (!g && !e) { toast('Digite a senha que você quer mudar.', 'erro'); return; }
+      if (g && g !== g2) { toast('As duas senhas do gerente não estão iguais.', 'erro'); return; }
+      const dados = {};
+      if (g) dados.gerente = g;
+      if (e) dados.equipe = e;
+      if (!(await fazer('senhasSalvar', dados))) return;
+      if (g) { cred = { pin: g }; guarda.set('cred', cred); }
+      ['sn-g', 'sn-g2', 'sn-e'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+      toast(g && e ? 'Senhas trocadas. Avise a equipe da senha nova.' : g ? 'Senha do gerente trocada.' : 'Senha da equipe trocada. Avise o garçom e a cozinha.', 'ok');
+      render();
     },
     async 'f-balcao'() {
       const nome = ($('#balcao-nome').value || '').trim();
@@ -900,10 +1123,11 @@
     async 'f-pagar'(form) {
       const c = contaPorId(form.dataset.c);
       if (!c) return;
-      const key = c.id + '-' + c.pags.length;
+      const key = chavePag(c);
       const valor = num(($('#pg-valor-' + key) || {}).value);
       const rec = $('#pg-receb-' + key);
-      const troco = rec && rec.value ? num(rec.value) - valor : null;
+      const troco = rec && rec.value ? Math.round((num(rec.value) - valor) * 100) / 100 : null;
+      if (troco != null && troco < 0) { toast(`Faltam ${brl(-troco)}. Confira o valor que o cliente entregou.`, 'erro'); return; }
       const r = await fazer('pagar', { conta: c.id, valor, forma: ui.cx.forma });
       if (!r) return;
       const depois = contaPorId(c.id);
@@ -916,8 +1140,8 @@
       if (!cart.length) return;
       const tot = Math.round(cart.reduce((a, x) => a + x.qtd * x.preco, 0) * 100) / 100;
       const rec = $('#vr-receb');
-      const troco = rec && rec.value ? num(rec.value) - tot : null;
-      if (troco != null && troco < 0) { toast(`Falta ${brl(-troco)}. Confira o valor entregue.`, 'erro'); return; }
+      const troco = rec && rec.value ? Math.round((num(rec.value) - tot) * 100) / 100 : null;
+      if (troco != null && troco < 0) { toast(`Faltam ${brl(-troco)}. Confira o valor que o cliente entregou.`, 'erro'); return; }
       const temCoz = cart.some((x) => { const m = S.menu.find((y) => y.id === x.mid); return m && m.cozinha; });
       const r = await fazer('vendaRapida', { nome: ($('#vr-nome') || {}).value || '', forma: ui.cx.forma,
         itens: cart.map((x) => ({ mid: x.mid, qtd: x.qtd, sem: x.sem, obs: x.obs, sab: x.sab })) });
@@ -962,7 +1186,7 @@
         return;
       }
       const blob = await new Promise((r) => cv.toBlob(r, 'image/png'));
-      const r = await fetch('/api/logo', { method: 'POST', headers: { 'x-pin': API.pin(), 'content-type': 'image/png' }, body: blob });
+      const r = await fetch('/api/logo', { method: 'POST', headers: { 'x-pin': cred.pin, 'content-type': 'image/png' }, body: blob });
       if (!r.ok) throw new Error();
       if (await fazer('cfgSalvar', { cfg: { logoV: Date.now() } })) toast('Logo atualizada.', 'ok');
     } catch (e) { toast('Não consegui usar essa imagem. Tente um PNG ou JPG.', 'erro'); }
@@ -976,7 +1200,13 @@
     if ((el.dataset.act === 'fundoFolha' || el.dataset.act === 'fecharPrevia') && el.classList.contains('veu') && e.target !== el) return;
     e.preventDefault();
     f(el.dataset, el, e);
+    // No caixa, cada clique aproveita para buscar novidades
+    if (tela === 'caixa' && API.modo === 'online' && Date.now() - ultimoPoll > 2000) agendarPoll(true);
   });
+  document.addEventListener('pointerdown', () => { tocando = Date.now(); }, true);
+  const soltou = () => { tocando = 0; if (renderPendente) setTimeout(() => { if (renderPendente) render(); }, 80); };
+  document.addEventListener('pointerup', soltou, true);
+  document.addEventListener('pointercancel', soltou, true);
   document.addEventListener('submit', (e) => {
     e.preventDefault();
     const f = FORMS[e.target.id];
@@ -997,25 +1227,56 @@
   });
 
   /* ---------- Atualização automática ---------- */
+  // Quanto mais movimento, mais rápido. Parado, o aparelho pergunta menos (economiza o plano do Netlify).
   let ocupado = false;
+  let pollTimer = null;
+  function intervalo() {
+    if (API.modo === 'demo') return 1500;
+    const parado = Date.now() - ultimaMudanca;
+    const base = tela === 'caixa' ? 12000 : 8000;
+    if (parado < 300000) return base;
+    return tela === 'cozinha' ? 16000 : base * (parado < 1200000 ? 2 : 3);
+  }
   async function poll() {
     if (ocupado || tela === 'cliente') return;
+    if (API.modo === 'online' && !cred.pin) return;
+    if (tela === 'inicio' && S) return;
     ocupado = true;
+    ultimoPoll = Date.now();
+    const usado = cred.pin;
     try {
       if (API.modo === 'demo') {
-        const d = guarda.get('demo-estado-v3');
-        if (d && S && d.v !== S.v) { API.demo = L.migrar(d); atualizar(API.demo); }
-      } else if (API.pin()) {
+        const d = guarda.get(CHAVE_DEMO);
+        if (d && S && d.v !== S.v) { API.demo = L.migrar(d); atualizar(API.demo, true); }
+      } else {
         const s = await API.estado(S && S.v);
-        if (ui.offline) { ui.offline = false; render(); }
-        if (s) atualizar(s);
+        const voltou = ui.offline;
+        ui.offline = false;
+        if (s) { ultimaMudanca = Date.now(); atualizar(s, true); }
+        else if (voltou) render();
       }
     } catch (e) {
-      if (e.code === 401) { API._pin = ''; sessao = null; guarda.set('sessao', null); S = null; render(); }
+      if (e.code === 401) { if (cred.pin === usado) deslogar(); }
       else if (!ui.offline) { ui.offline = true; render(); }
     } finally { ocupado = false; }
   }
+  function agendarPoll(agora) {
+    clearTimeout(pollTimer);
+    if (document.hidden || tela === 'cliente') return;
+    const jaJa = agora && Date.now() - ultimoPoll > 1500;
+    pollTimer = setTimeout(async () => { await poll(); agendarPoll(); }, jaJa ? 0 : intervalo());
+  }
   function digitando() { const a = document.activeElement; return a && /INPUT|TEXTAREA|SELECT/.test(a.tagName); }
+  const dedoNaTela = () => tocando && Date.now() - tocando < 2500;
+
+  let clienteTimer = null;
+  const clienteAberto = Date.now();
+  function agendarCliente() {
+    clearTimeout(clienteTimer);
+    if (document.hidden) return;
+    const espera = API.modo === 'demo' ? 3000 : Date.now() - clienteAberto > 1800000 ? 60000 : 20000;
+    clienteTimer = setTimeout(async () => { await carregarCliente(); agendarCliente(); }, espera);
+  }
 
   async function iniciar() {
     const st = document.createElement('style');
@@ -1031,22 +1292,35 @@
     if (tela === 'cliente') {
       ui.carregando = false;
       await carregarCliente();
-      setInterval(carregarCliente, 15000);
-      document.addEventListener('visibilitychange', () => { if (!document.hidden) carregarCliente(); });
+      agendarCliente();
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) { carregarCliente(); agendarCliente(); } else clearTimeout(clienteTimer); });
       return;
     }
     if (API.modo === 'demo') {
       S = API.demo;
-      if (!sessao) { sessao = { nome: 'Jean', pin: '' }; guarda.set('sessao', sessao); }
-    } else if (API.pin()) {
-      try { S = await API.estado(); } catch (e) { if (e.code === 401) { sessao = null; guarda.set('sessao', null); } else ui.offline = true; }
+      nivel = 'gerente';
+      if (!sessao) { sessao = { nome: 'Jean' }; guarda.set('sessao', sessao); }
+    } else if (cred.pin) {
+      try { S = await API.estado(); guarda.set('cred', cred); }
+      catch (e) { if (e.code === 401) { cred = { pin: '' }; guarda.set('cred', cred); } else ui.offline = true; }
     }
     ui.carregando = false;
     render();
     if (tela === 'cozinha') manterTelaLigada();
-    setInterval(poll, API.modo === 'demo' ? 1500 : 3000);
-    setInterval(() => { if (!digitando() && !ui.g.sheet && (tela === 'cozinha' || tela === 'garcom')) render(); }, 30000);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) { poll(); if (tela === 'cozinha') manterTelaLigada(); } });
+    if (tela === 'caixa' && ui.cx.tab === 'relatorio') carregarTurnos();
+    agendarPoll();
+    // Atualiza os "há 5 min" da cozinha e do garçom
+    setInterval(() => { if (!document.hidden && !digitando() && !dedoNaTela() && !ui.g.sheet && !ui.previa && S && (tela === 'cozinha' || tela === 'garcom')) render(); }, 30000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { clearTimeout(pollTimer); return; }
+      agendarPoll(true);
+      if (tela === 'cozinha') manterTelaLigada();
+    });
+    window.addEventListener('online', () => agendarPoll(true));
+    window.addEventListener('hashchange', () => {
+      const novo = location.hash.replace('#', '');
+      if (TELAS_EQUIPE[novo] && novo !== tela) ir(novo);
+    });
   }
   iniciar();
 })();
