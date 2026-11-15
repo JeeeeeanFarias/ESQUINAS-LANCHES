@@ -51,6 +51,7 @@
       it('xis-esquinas', "Xis Esquina's", 'Xis', true, ['Carne', 'Frango', 'Calabresa', 'Coração', 'Bacon'].concat(base)),
       it('dog', 'Cachorro-quente', 'Xis', true, ['Molho', 'Milho', 'Ervilha', 'Batata palha', 'Maionese', 'Ketchup', 'Mostarda']),
       it('torrada', 'Torrada', 'Xis', true, ['Presunto', 'Queijo', 'Tomate']),
+      it('torrada-ovo', 'Torrada com ovo', 'Xis', true, ['Presunto', 'Queijo', 'Tomate', 'Ovo']),
       it('batata-m', 'Batata frita média', 'Porções', true),
       it('batata-g', 'Batata frita grande', 'Porções', true),
       it('picadao-m', 'Picadão médio', 'Porções', true),
@@ -87,12 +88,12 @@
       it('chopp-torre', 'Torre de chopp', 'Chopp', false),
       it('capeta-m', 'Capeta médio', 'Capeta', false, [], CAPETA),
       it('capeta-g', 'Capeta grande', 'Capeta', false, [], CAPETA)
-    ].map((m) => (PRECOS_BEBIDAS[m.id] ? Object.assign(m, { preco: PRECOS_BEBIDAS[m.id] }) : m));
+    ].map((m) => Object.assign(m, { preco: PRECOS_BEBIDAS[m.id] || PRECOS_COMIDAS[m.id] || 0 }));
   }
 
   // Versão do cardápio de fábrica. Ao subir, atualizarCardapio() ajusta o cardápio já em uso
   // sem apagar preços nem itens que o caixa cadastrou.
-  const CARDAPIO_V = 3;
+  const CARDAPIO_V = 4;
 
   // Preços das bebidas passados pelo Jean em 15/11/2026
   const PRECOS_BEBIDAS = {
@@ -102,6 +103,14 @@
     'original-latao': 10, 'heineken-latao': 9, 'bud-latao': 8, 'polar-latao': 7.5, 'brahma-latao': 7.5,
     'schin-latao': 6.5, 'amstel-latao': 6.5,
     'heineken-ln': 9, 'bud-ln': 9, 'skol-beats': 13, ice: 8, 'keep-cooler': 14.5
+  };
+  // Preços das comidas, da mesma data. Os combos ficaram sem preço: o caixa preenche depois.
+  const PRECOS_COMIDAS = {
+    pastel: 13, risoles: 13,
+    'xis-carne': 23, 'xis-frango': 23, 'xis-calabresa': 23, 'xis-coracao': 29, 'xis-bacon': 28, 'xis-esquinas': 38,
+    dog: 20, torrada: 15, 'torrada-ovo': 17,
+    'batata-m': 39, 'batata-g': 49, 'picadao-m': 120, 'picadao-g': 145, 'porcao-peixe': 89,
+    'ala-carne': 29.9, 'ala-frango': 29.9, 'ala-peixe': 39, 'ala-chuleta': 29.9
   };
 
   function atualizarCardapio(s) {
@@ -146,6 +155,13 @@
       // Keep Cooler e os preços das bebidas
       inserir((m) => m.cat === 'Long neck', [novo('keep-cooler', 'Keep Cooler', 'Long neck')]);
       s.menu.forEach((m) => { if (PRECOS_BEBIDAS[m.id]) m.preco = PRECOS_BEBIDAS[m.id]; });
+    }
+    if (de < 4) {
+      // Torrada com ovo e os preços das comidas
+      const tor = acha('torrada');
+      inserir((m) => m.id === 'torrada', [Object.assign(novo('torrada-ovo', 'Torrada com ovo', tor ? tor.cat : 'Xis'),
+        { cozinha: true, ing: ['Presunto', 'Queijo', 'Tomate', 'Ovo'] })]);
+      s.menu.forEach((m) => { if (PRECOS_COMIDAS[m.id]) m.preco = PRECOS_COMIDAS[m.id]; });
     }
     s.menuV = CARDAPIO_V;
     s.v = (s.v || 0) + 1;
