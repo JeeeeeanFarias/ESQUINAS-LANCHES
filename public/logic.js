@@ -34,11 +34,11 @@
 
   // Cardápio da Esquina's. Os preços começam em zero: o caixa preenche na aba Cardápio.
   function montarCardapio() {
-    const base = ['Maionese', 'Alface', 'Tomate', 'Milho', 'Ervilha', 'Queijo', 'Ovo'];
+    const base = INGREDIENTES.xis;
     const PASTEL = ['Carne', 'Frango', 'Calabresa', 'Queijo', 'Estrogonofe'];
     const CAPETA = ['Abacaxi', 'Morango', 'Chocolate'];
     const ADICIONAL = ['Bife', 'Frango', 'Peixe', 'Chuleta'];
-    const it = (id, nome, cat, cozinha, ing = [], sab = []) => ({ id, nome, cat, preco: 0, cozinha, ativo: true, ing, sab });
+    const it = (id, nome, cat, cozinha, ing = [], sab = []) => ({ id, nome, cat, preco: 0, cozinha, ativo: true, ing: ing.slice(), sab: sab.slice() });
     return [
       it('pastel', 'Pastel', 'Pastéis', true, [], PASTEL),
       it('combo1', 'Combo 1: Pastel + Refri 220 ml', 'Pastéis', true, [], PASTEL),
@@ -49,10 +49,10 @@
       it('xis-calabresa', 'Xis Calabresa', 'Xis', true, base),
       it('xis-coracao', 'Xis Coração', 'Xis', true, base),
       it('xis-bacon', 'Xis Bacon', 'Xis', true, base),
-      it('xis-esquinas', "Xis Esquina's", 'Xis', true, ['Carne', 'Frango', 'Calabresa', 'Coração', 'Bacon'].concat(base)),
-      it('dog', 'Cachorro-quente', 'Xis', true, ['Molho', 'Milho', 'Ervilha', 'Batata palha', 'Maionese', 'Ketchup', 'Mostarda']),
-      it('torrada', 'Torrada', 'Xis', true, ['Presunto', 'Queijo', 'Tomate']),
-      it('torrada-ovo', 'Torrada com ovo', 'Xis', true, ['Presunto', 'Queijo', 'Tomate', 'Ovo']),
+      it('xis-esquinas', "Xis Esquina's", 'Xis', true, INGREDIENTES.esquinas),
+      it('dog', 'Cachorro-quente', 'Xis', true, INGREDIENTES.dog),
+      it('torrada', 'Torrada', 'Xis', true, INGREDIENTES.torrada),
+      it('torrada-ovo', 'Torrada com ovo', 'Xis', true, INGREDIENTES.torradaOvo),
       it('batata-m', 'Batata frita média', 'Porções', true),
       it('batata-g', 'Batata frita grande', 'Porções', true),
       it('picadao-m', 'Picadão médio', 'Porções', true),
@@ -96,7 +96,19 @@
 
   // Versão do cardápio de fábrica. Ao subir, atualizarCardapio() ajusta o cardápio já em uso
   // sem apagar preços nem itens que o caixa cadastrou.
-  const CARDAPIO_V = 7;
+  const CARDAPIO_V = 8;
+
+  // O que vai em cada lanche (vira os botões de "tirar ingrediente"). O pão não entra, porque não se tira.
+  const INGREDIENTES = (() => {
+    const xis = ['Maionese', 'Alface', 'Tomate', 'Milho', 'Ervilha', 'Ovo', 'Queijo'];
+    return {
+      xis,
+      esquinas: ['Carne', 'Frango', 'Calabresa', 'Coração', 'Bacon'].concat(xis),
+      dog: ['Molho', 'Maionese', 'Milho', 'Ervilha', 'Batata palha', 'Salsicha'],
+      torrada: ['Presunto', 'Queijo'],
+      torradaOvo: ['Presunto', 'Queijo', 'Ovo', 'Alface']
+    };
+  })();
 
   // Preços das bebidas passados pelo Jean em 15/11/2026
   const PRECOS_BEBIDAS = {
@@ -192,6 +204,12 @@
     if (de < 7) {
       // Xis carne, frango e calabresa passam a R$ 25
       ['xis-carne', 'xis-frango', 'xis-calabresa'].forEach((id) => { const m = acha(id); if (m) m.preco = 25; });
+    }
+    if (de < 8) {
+      // Ingredientes dos lanches conforme o Jean passou
+      const por = { 'xis-carne': 'xis', 'xis-frango': 'xis', 'xis-calabresa': 'xis', 'xis-coracao': 'xis', 'xis-bacon': 'xis',
+        'xis-esquinas': 'esquinas', dog: 'dog', torrada: 'torrada', 'torrada-ovo': 'torradaOvo' };
+      Object.keys(por).forEach((id) => { const m = acha(id); if (m) m.ing = INGREDIENTES[por[id]].slice(); });
     }
     s.menuV = CARDAPIO_V;
     s.v = (s.v || 0) + 1;
