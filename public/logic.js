@@ -37,6 +37,7 @@
     const base = ['Maionese', 'Alface', 'Tomate', 'Milho', 'Ervilha', 'Queijo', 'Ovo'];
     const PASTEL = ['Carne', 'Frango', 'Calabresa', 'Queijo', 'Estrogonofe'];
     const CAPETA = ['Abacaxi', 'Morango', 'Chocolate'];
+    const ADICIONAL = ['Bife', 'Frango', 'Peixe', 'Chuleta'];
     const it = (id, nome, cat, cozinha, ing = [], sab = []) => ({ id, nome, cat, preco: 0, cozinha, ativo: true, ing, sab });
     return [
       it('pastel', 'Pastel', 'Pastéis', true, [], PASTEL),
@@ -61,6 +62,8 @@
       it('ala-frango', 'Ala-minuta de frango', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
       it('ala-peixe', 'Ala-minuta de peixe', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
       it('ala-chuleta', 'Ala-minuta de chuleta', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
+      it('adic-ovo', 'Adicional de ovo', 'Adicionais', true),
+      it('adic-carne', 'Adicional', 'Adicionais', true, [], ADICIONAL),
       it('refri-2l', 'Refri 2 litros', 'Bebidas', false),
       it('charrua-2l', 'Guaraná Charrua 2 litros', 'Bebidas', false),
       it('refri-lata', 'Refri lata', 'Bebidas', false),
@@ -93,7 +96,7 @@
 
   // Versão do cardápio de fábrica. Ao subir, atualizarCardapio() ajusta o cardápio já em uso
   // sem apagar preços nem itens que o caixa cadastrou.
-  const CARDAPIO_V = 4;
+  const CARDAPIO_V = 5;
 
   // Preços das bebidas passados pelo Jean em 15/11/2026
   const PRECOS_BEBIDAS = {
@@ -110,7 +113,8 @@
     'xis-carne': 23, 'xis-frango': 23, 'xis-calabresa': 23, 'xis-coracao': 29, 'xis-bacon': 28, 'xis-esquinas': 38,
     dog: 20, torrada: 15, 'torrada-ovo': 17,
     'batata-m': 39, 'batata-g': 49, 'picadao-m': 120, 'picadao-g': 145, 'porcao-peixe': 89,
-    'ala-carne': 29.9, 'ala-frango': 29.9, 'ala-peixe': 39, 'ala-chuleta': 29.9
+    'ala-carne': 29.9, 'ala-frango': 29.9, 'ala-peixe': 39, 'ala-chuleta': 29.9,
+    'adic-ovo': 2.5, 'adic-carne': 10
   };
 
   function atualizarCardapio(s) {
@@ -162,6 +166,12 @@
       inserir((m) => m.id === 'torrada', [Object.assign(novo('torrada-ovo', 'Torrada com ovo', tor ? tor.cat : 'Xis'),
         { cozinha: true, ing: ['Presunto', 'Queijo', 'Tomate', 'Ovo'] })]);
       s.menu.forEach((m) => { if (PRECOS_COMIDAS[m.id]) m.preco = PRECOS_COMIDAS[m.id]; });
+    }
+    if (de < 5) {
+      // Adicionais: ovo e bife, frango, peixe ou chuleta
+      inserir((m) => m.cat === 'Ala-minuta', [
+        Object.assign(novo('adic-ovo', 'Adicional de ovo', 'Adicionais'), { cozinha: true, preco: 2.5 }),
+        Object.assign(novo('adic-carne', 'Adicional', 'Adicionais'), { cozinha: true, preco: 10, sab: ['Bife', 'Frango', 'Peixe', 'Chuleta'] })]);
     }
     s.menuV = CARDAPIO_V;
     s.v = (s.v || 0) + 1;
