@@ -42,7 +42,7 @@
     return [
       it('pastel', 'Pastel', 'Pastéis', true, [], PASTEL),
       it('combo1', 'Combo 1: Pastel + Refri 220 ml', 'Pastéis', true, [], PASTEL),
-      it('combo2', 'Combo 2: Pastel + Suco 220 ml', 'Pastéis', true, [], PASTEL),
+      it('combo2', 'Combo 2: Pastel + Café', 'Pastéis', true, [], PASTEL),
       it('risoles', 'Risoles', 'Pastéis', true),
       it('xis-carne', 'Xis Carne', 'Xis', true, base),
       it('xis-frango', 'Xis Frango', 'Xis', true, base),
@@ -96,7 +96,7 @@
 
   // Versão do cardápio de fábrica. Ao subir, atualizarCardapio() ajusta o cardápio já em uso
   // sem apagar preços nem itens que o caixa cadastrou.
-  const CARDAPIO_V = 8;
+  const CARDAPIO_V = 9;
 
   // O que vai em cada lanche (vira os botões de "tirar ingrediente"). O pão não entra, porque não se tira.
   const INGREDIENTES = (() => {
@@ -119,9 +119,9 @@
     'schin-latao': 6.5, 'amstel-latao': 6.5,
     'heineken-ln': 9, 'bud-ln': 9, 'skol-beats': 13, ice: 8, 'keep-cooler': 14.5
   };
-  // Preços das comidas, da mesma data. Os combos ficaram sem preço: o caixa preenche depois.
+  // Preços das comidas, da mesma data
   const PRECOS_COMIDAS = {
-    pastel: 13, risoles: 13,
+    pastel: 13, risoles: 13, combo1: 16.5, combo2: 16.5,
     'xis-carne': 25, 'xis-frango': 25, 'xis-calabresa': 25, 'xis-coracao': 29, 'xis-bacon': 28, 'xis-esquinas': 38,
     dog: 20, torrada: 15, 'torrada-ovo': 17,
     'batata-m': 39, 'batata-g': 49, 'picadao-m': 120, 'picadao-g': 145, 'porcao-peixe': 89,
@@ -210,6 +210,11 @@
       const por = { 'xis-carne': 'xis', 'xis-frango': 'xis', 'xis-calabresa': 'xis', 'xis-coracao': 'xis', 'xis-bacon': 'xis',
         'xis-esquinas': 'esquinas', dog: 'dog', torrada: 'torrada', 'torrada-ovo': 'torradaOvo' };
       Object.keys(por).forEach((id) => { const m = acha(id); if (m) m.ing = INGREDIENTES[por[id]].slice(); });
+    }
+    if (de < 9) {
+      // Combos a R$ 16,50; o combo 2 passa a ser pastel com café
+      const c1 = acha('combo1'); if (c1) c1.preco = 16.5;
+      const c2 = acha('combo2'); if (c2) { c2.preco = 16.5; c2.nome = 'Combo 2: Pastel + Café'; }
     }
     s.menuV = CARDAPIO_V;
     s.v = (s.v || 0) + 1;
