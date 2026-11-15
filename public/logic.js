@@ -96,7 +96,7 @@
 
   // Versão do cardápio de fábrica. Ao subir, atualizarCardapio() ajusta o cardápio já em uso
   // sem apagar preços nem itens que o caixa cadastrou.
-  const CARDAPIO_V = 6;
+  const CARDAPIO_V = 7;
 
   // Preços das bebidas passados pelo Jean em 15/11/2026
   const PRECOS_BEBIDAS = {
@@ -110,7 +110,7 @@
   // Preços das comidas, da mesma data. Os combos ficaram sem preço: o caixa preenche depois.
   const PRECOS_COMIDAS = {
     pastel: 13, risoles: 13,
-    'xis-carne': 23, 'xis-frango': 23, 'xis-calabresa': 23, 'xis-coracao': 29, 'xis-bacon': 28, 'xis-esquinas': 38,
+    'xis-carne': 25, 'xis-frango': 25, 'xis-calabresa': 25, 'xis-coracao': 29, 'xis-bacon': 28, 'xis-esquinas': 38,
     dog: 20, torrada: 15, 'torrada-ovo': 17,
     'batata-m': 39, 'batata-g': 49, 'picadao-m': 120, 'picadao-g': 145, 'porcao-peixe': 89,
     'ala-carne': 29.9, 'ala-frango': 29.9, 'ala-peixe': 39, 'ala-chuleta': 29.9,
@@ -188,6 +188,10 @@
         });
         s.menu = fabrica.concat(doCaixa);
       }
+    }
+    if (de < 7) {
+      // Xis carne, frango e calabresa passam a R$ 25
+      ['xis-carne', 'xis-frango', 'xis-calabresa'].forEach((id) => { const m = acha(id); if (m) m.preco = 25; });
     }
     s.menuV = CARDAPIO_V;
     s.v = (s.v || 0) + 1;
