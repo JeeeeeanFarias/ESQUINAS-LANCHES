@@ -82,16 +82,27 @@
       it('bud-ln', 'Budweiser long neck', 'Long neck', false),
       it('skol-beats', 'Skol Beats', 'Long neck', false),
       it('ice', 'Ice', 'Long neck', false),
+      it('keep-cooler', 'Keep Cooler', 'Long neck', false),
       it('chopp-taca', 'Chopp em taça', 'Chopp', false),
       it('chopp-torre', 'Torre de chopp', 'Chopp', false),
       it('capeta-m', 'Capeta médio', 'Capeta', false, [], CAPETA),
       it('capeta-g', 'Capeta grande', 'Capeta', false, [], CAPETA)
-    ];
+    ].map((m) => (PRECOS_BEBIDAS[m.id] ? Object.assign(m, { preco: PRECOS_BEBIDAS[m.id] }) : m));
   }
 
   // Versão do cardápio de fábrica. Ao subir, atualizarCardapio() ajusta o cardápio já em uso
   // sem apagar preços nem itens que o caixa cadastrou.
-  const CARDAPIO_V = 2;
+  const CARDAPIO_V = 3;
+
+  // Preços das bebidas passados pelo Jean em 15/11/2026
+  const PRECOS_BEBIDAS = {
+    'refri-2l': 15, 'charrua-2l': 10, 'refri-lata': 6.5, suco: 7.5, agua: 5, cafe: 5.5,
+    baly: 9, monster: 12.5, 'chopp-taca': 10, 'chopp-torre': 75, 'capeta-m': 20, 'capeta-g': 25,
+    'schin-1l': 13, 'polar-1l': 16, 'bud-1l': 18,
+    'original-latao': 10, 'heineken-latao': 9, 'bud-latao': 8, 'polar-latao': 7.5, 'brahma-latao': 7.5,
+    'schin-latao': 6.5, 'amstel-latao': 6.5,
+    'heineken-ln': 9, 'bud-ln': 9, 'skol-beats': 13, ice: 8, 'keep-cooler': 14.5
+  };
 
   function atualizarCardapio(s) {
     const de = s.menuV || 1;
@@ -130,6 +141,11 @@
       inserir((m) => m.cat === 'Latão', [
         novo('heineken-ln', 'Heineken long neck', 'Long neck'), novo('bud-ln', 'Budweiser long neck', 'Long neck'),
         novo('skol-beats', 'Skol Beats', 'Long neck'), novo('ice', 'Ice', 'Long neck')]);
+    }
+    if (de < 3) {
+      // Keep Cooler e os preços das bebidas
+      inserir((m) => m.cat === 'Long neck', [novo('keep-cooler', 'Keep Cooler', 'Long neck')]);
+      s.menu.forEach((m) => { if (PRECOS_BEBIDAS[m.id]) m.preco = PRECOS_BEBIDAS[m.id]; });
     }
     s.menuV = CARDAPIO_V;
     s.v = (s.v || 0) + 1;
