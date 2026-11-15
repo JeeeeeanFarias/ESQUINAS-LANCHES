@@ -25,6 +25,12 @@ As senhas de fábrica são **1234** (equipe) e **4321** (gerente). No primeiro a
 
 Quando uma senha muda, os aparelhos que usavam a antiga voltam para a tela de entrada sozinhos.
 
+### Pessoa "só garçom"
+
+Em **Caixa → Ajustes → Equipe**, o botão **Deixar só garçom** limita uma pessoa à tela do garçom: com o nome dela, o aparelho não abre a cozinha nem o caixa, e o servidor recusa qualquer ação que não seja anotar pedido, cancelar item, juntar ou trocar mesa e marcar "Levei à mesa". O André começa assim.
+
+Cada pessoa escolhe o próprio nome ao entrar, sem senha individual. Por isso a trava de verdade continua sendo a **senha do gerente**: não passe ela para quem é só garçom.
+
 **Se esquecer a senha do gerente:** no Netlify, abra **Site configuration → Environment variables** e crie a variável `REDEFINIR_SENHAS` com um texto qualquer (por exemplo, a data de hoje). Depois vá em **Deploys → Trigger deploy**. As duas senhas voltam às de fábrica **uma única vez**, sem apagar nada, e o caixa pede para criar uma senha nova. Se precisar de novo no futuro, troque o texto da variável.
 
 ## O dia a dia

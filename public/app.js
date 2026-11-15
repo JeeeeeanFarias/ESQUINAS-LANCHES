@@ -344,11 +344,12 @@
       ['cartoes', 'Cartões das mesas', 'QR Codes prontos para a gráfica', '10 × 15 cm']
     ];
     const trancada = (t) => API.modo === 'online' && SO_GERENTE_TELA[t] && nivel !== 'gerente';
+    const visiveis = restrito() ? portas.filter((p) => p[0] === 'garcom') : portas;
     let mesasOpt = '';
     if (S) for (let i = 1; i <= S.cfg.mesas; i++) mesasOpt += `<option value="${i}">Mesa ${i}</option>`;
     return `${faixaDemo()}<main class="wrap inicio">
       <div class="hero">${logoHtml(cfg, 'lg')}<h1>${esc((cfg && cfg.nome) || NOME_PADRAO)}</h1><p class="muted">Escolha a tela deste aparelho. Ele lembra da escolha.</p></div>
-      <div class="portas">${portas.map(([t, n, d, a, pri]) => `<button class="porta ${pri ? 'principal' : ''}" data-act="ir" data-t="${t}"><span class="rot">${a}${trancada(t) ? ' · senha do gerente' : ''}</span><b>${n}</b><span class="muted">${d}</span></button>`).join('')}</div>
+      <div class="portas">${visiveis.map(([t, n, d, a, pri]) => `<button class="porta ${pri ? 'principal' : ''}" data-act="ir" data-t="${t}"><span class="rot">${a}${trancada(t) ? ' · senha do gerente' : ''}</span><b>${n}</b><span class="muted">${d}</span></button>`).join('')}</div>
       ${API.modo === 'online' && cred.pin ? '<div class="linha-btns"><button class="btn mini leve" data-act="esquecer">Sair deste aparelho</button></div>' : ''}
       ${API.modo === 'demo' ? `<section class="bloco"><h2>Ver como cliente</h2><p class="muted">É isto que aparece quando alguém aponta a câmera para o cartão da mesa.</p>
         <div class="linha-btns"><label class="sr" for="demo-mesa">Mesa</label><select id="demo-mesa" style="max-width:180px">${mesasOpt}</select><button class="btn escuro" data-act="verCliente">Abrir tela do cliente</button></div>
@@ -358,6 +359,15 @@
 
   /* ---------- Entrada da equipe ---------- */
   const SO_GERENTE_TELA = { caixa: true, cartoes: true };
+  // Pessoa marcada como "só garçom" em Caixa → Ajustes → Equipe
+  const soGarcom = (n) => !!(S && (S.soGarcom || []).includes(n));
+  const restrito = () => !!(sessao && soGarcom(sessao.nome));
+  function vSoGarcom(titulo) {
+    return `${topo(titulo)}<main class="wrap login"><h1>Tela só para o caixa</h1>
+      <p class="muted"><b>${esc(sessao.nome)}</b> tem acesso somente à tela do garçom.</p>
+      <button class="btn pri grande" data-act="ir" data-t="garcom">Ir para a tela do garçom</button>
+      <button class="btn leve" data-act="sair">Não sou ${esc(sessao.nome)}</button></main>`;
+  }
   function vSenha(titulo) {
     const ger = !!SO_GERENTE_TELA[tela];
     return `${topo(titulo)}<main class="wrap login"><h1>${ger ? 'Área do caixa' : 'Entrar'}</h1>
@@ -705,11 +715,11 @@
         <button class="btn pri">Salvar</button></form>
       <div class="bloco"><h2>Logo</h2><div class="linha-btns" style="align-items:center">${logoHtml(S.cfg, 'lg')}<label class="btn"><input id="aj-logo" type="file" accept="image/*" class="sr">Escolher imagem</label></div>
         <p class="muted">Aparece no topo, na tela do cliente e nos cartões das mesas. PNG com fundo transparente fica melhor.</p></div>
-      <div class="bloco"><h2>Equipe</h2><div class="pags">${S.equipe.map((n) => `<div class="pag"><b>${esc(n)}</b><span class="esp"></span>${ui.cx.conf === 'eq-' + n
+      <div class="bloco"><h2>Equipe</h2><div class="pags">${S.equipe.map((n) => `<div class="pag"><b>${esc(n)}</b>${soGarcom(n) ? '<span class="pill lar">só garçom</span>' : ''}<span class="esp"></span><button class="btn mini" data-act="papel" data-n="${esc(n)}" data-v="${soGarcom(n) ? '0' : '1'}">${soGarcom(n) ? 'Dar acesso completo' : 'Deixar só garçom'}</button>${ui.cx.conf === 'eq-' + n
           ? `<button class="btn mini perigo" data-act="remEquipe" data-n="${esc(n)}">Remover</button><button class="btn mini" data-act="naoCancel">Não</button>`
           : `<button class="btn mini leve" data-act="pedirRemEquipe" data-n="${esc(n)}">Remover</button>`}</div>`).join('')}</div>
         <form id="f-equipe" class="linha-btns"><label class="sr" for="aj-novo">Novo nome</label><input id="aj-novo" type="text" placeholder="Nome" maxlength="30" style="flex:1;min-width:140px"><button class="btn escuro">Adicionar</button></form>
-        <p class="muted">Cada pessoa escolhe o próprio nome ao entrar. O nome fica marcado nos pedidos.</p></div>
+        <p class="muted">Cada pessoa escolhe o próprio nome ao entrar. O nome fica marcado nos pedidos. Quem está como <b>só garçom</b> vê apenas a tela do garçom: não entra na cozinha nem no caixa.</p></div>
       ${API.modo === 'online' ? `<div class="bloco"><h2>Senhas</h2>
         <p class="muted">Com a <b>senha da equipe</b>, o garçom e a cozinha só lançam e acompanham pedidos. Abrir e fechar o caixa, receber, cardápio e relatório pedem a <b>senha do gerente</b>.</p>
         ${formSenhas(false)}</div>
@@ -838,6 +848,7 @@
       if (SO_GERENTE_TELA[tela] && S._senhas && S._senhas.trocarGerente) return vCriarSenha(titulo);
     }
     if (!sessao || S.equipe.indexOf(sessao.nome) === -1) return vNome(titulo);
+    if (restrito() && tela !== 'garcom') return vSoGarcom(titulo);
     if (tela === 'garcom') return vGarcom();
     if (tela === 'cozinha') return vCozinha();
     if (tela === 'caixa') return vCaixa() + gFolhaCaixa();
@@ -1062,6 +1073,7 @@
     async removerMenu(d) { if (await fazer('menuRemover', { mid: d.m })) { ui.cx.edit = null; toast('Item removido.'); render(); } },
     async ativoMenu(d) { const m = S.menu.find((x) => x.id === d.m); if (m) await fazer('menuSalvar', { item: Object.assign({}, m, { ativo: !m.ativo }) }); },
     pedirRemEquipe(d) { ui.cx.conf = 'eq-' + d.n; render(); },
+    async papel(d) { if (await fazer('papelSalvar', { nome: d.n, soGarcom: d.v === '1' })) toast(d.v === '1' ? `${d.n} agora só acessa a tela do garçom.` : `${d.n} voltou a ter acesso completo.`, 'ok'); },
     async remEquipe(d) { ui.cx.conf = null; await fazer('equipeSalvar', { equipe: S.equipe.filter((n) => n !== d.n) }); },
     imprimirCartoes() { imprimirCartoes(); },
     async copiar(d, el) {

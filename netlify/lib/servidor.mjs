@@ -9,7 +9,7 @@ const PADRAO = { equipe: '1234', gerente: '4321' };
 
 // O que só o caixa (senha do gerente) pode fazer
 const SO_GERENTE = new Set(['abrirCaixa', 'fecharCaixa', 'pagar', 'removerPag', 'liberar', 'vendaRapida',
-  'menuSalvar', 'menuRemover', 'cfgSalvar', 'equipeSalvar', 'senhasSalvar']);
+  'menuSalvar', 'menuRemover', 'cfgSalvar', 'equipeSalvar', 'papelSalvar', 'senhasSalvar']);
 const EM_ANDAMENTO = ['novo', 'preparando', 'pronto'];
 
 const json = (obj, status = 200) =>
@@ -37,6 +37,7 @@ function visao(s, nivel) {
     _nivel: nivel,
     cfg: Object.assign({}, s.cfg, { logoData: '' }),
     equipe: s.equipe,
+    soGarcom: s.soGarcom || [],
     menu: s.menu,
     contas,
     pedidos: gerente ? s.pedidos : s.pedidos.filter((p) => ids.has(p.conta)),

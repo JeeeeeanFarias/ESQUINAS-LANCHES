@@ -16,7 +16,8 @@
     const s = {
       v: 1,
       cfg: { nome: "Esquina's Lanches", mesas: 16, impressora: 80, logoV: 0, logoData: '' },
-      equipe: ['Jean', 'Eliane', 'Alauri'],
+      equipe: ['Jean', 'Eliane', 'Alauri', 'André'],
+      soGarcom: ['André'],
       codes: {},
       menu: montarCardapio(),
       menuV: CARDAPIO_V,
@@ -96,7 +97,7 @@
 
   // Versão do cardápio de fábrica. Ao subir, atualizarCardapio() ajusta o cardápio já em uso
   // sem apagar preços nem itens que o caixa cadastrou.
-  const CARDAPIO_V = 10;
+  const CARDAPIO_V = 11;
 
   // O que vai em cada lanche (vira os botões de "tirar ingrediente"). O pão não entra, porque não se tira.
   const INGREDIENTES = (() => {
@@ -221,6 +222,12 @@
       // Ala-minuta: arroz, batata frita, ovo, feijão e salada, nessa ordem
       ['ala-carne', 'ala-frango', 'ala-peixe', 'ala-chuleta'].forEach((id) => { const m = acha(id); if (m) m.ing = INGREDIENTES.ala.slice(); });
     }
+    if (de < 11) {
+      // O André entra como "só garçom"
+      let andre = s.equipe.find((n) => /^andr[eé]$/i.test(String(n).trim()));
+      if (!andre) { andre = 'André'; s.equipe.push(andre); }
+      s.soGarcom = Array.from(new Set((s.soGarcom || []).concat(andre)));
+    }
     s.menuV = CARDAPIO_V;
     s.v = (s.v || 0) + 1;
     return true;
@@ -243,6 +250,7 @@
     s.log = (s.log || []).filter((l) => l.tipo === 'cancel').slice(0, 300);
     s.menu = (s.menu || []).map((m) => Object.assign({ sab: [], ing: [] }, m));
     atualizarCardapio(s);
+    s.soGarcom = (s.soGarcom || []).filter((n) => s.equipe.includes(n));
     const tid = s.turno ? s.turno.id : null;
     s.contas.forEach((c) => {
       c.itens = c.itens || [];
@@ -499,8 +507,28 @@
       if (!lista.length) throw new Error('Deixe pelo menos uma pessoa na equipe.');
       if (lista.length > 40) throw new Error('A equipe chegou ao limite de 40 pessoas.');
       s.equipe = Array.from(new Set(lista));
+      s.soGarcom = (s.soGarcom || []).filter((n) => s.equipe.includes(n));
+      if (s.equipe.every((n) => s.soGarcom.includes(n))) throw new Error('Pelo menos uma pessoa precisa ter acesso ao caixa.');
+    },
+
+    // Marca ou desmarca uma pessoa como "só garçom"
+    papelSalvar(s, a) {
+      const nome = String(a.nome || '');
+      if (!s.equipe.includes(nome)) throw new Error('Essa pessoa não está na equipe.');
+      const lista = (s.soGarcom || []).filter((n) => n !== nome);
+      if (a.soGarcom) lista.push(nome);
+      if (s.equipe.every((n) => lista.includes(n))) throw new Error('Pelo menos uma pessoa precisa ter acesso ao caixa.');
+      s.soGarcom = lista;
     }
   };
+
+  // O que uma pessoa marcada como "só garçom" pode fazer
+  const DO_GARCOM = ['lancar', 'cancelarItem', 'juntar', 'separar', 'trocar'];
+  function podeFazer(s, nome, a) {
+    if (!(s.soGarcom || []).includes(nome)) return true;
+    if (DO_GARCOM.includes(a.tipo)) return true;
+    return a.tipo === 'status' && a.status === 'entregue'; // "Levei à mesa"
+  }
 
   function apply(s, a) {
     if (!a || !a.tipo || !a.id) throw new Error('Ação inválida.');
@@ -508,6 +536,7 @@
     if (s.feitos.includes(a.id)) return s;
     if (!Object.prototype.hasOwnProperty.call(H, a.tipo)) throw new Error('Ação desconhecida.');
     a.por = String(a.por || 'Equipe').slice(0, 30);
+    if (!podeFazer(s, a.por, a)) throw new Error(`${a.por} só tem acesso à tela do garçom.`);
     H[a.tipo](s, a);
     s.feitos.unshift(a.id);
     if (s.feitos.length > 300) s.feitos.length = 300;

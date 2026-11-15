@@ -302,3 +302,7 @@ td.d, th.d { text-align: right; }
 .aviso-linha { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
 .aviso-linha > span { flex: 1; min-width: 200px; }
 .login .btn.leve { justify-self: start; }
+
+/* Equipe: papel de cada pessoa */
+.pag { flex-wrap: wrap; }
+.pag .btn, .pag .pill { white-space: nowrap; }
