@@ -96,7 +96,7 @@
 
   // Versão do cardápio de fábrica. Ao subir, atualizarCardapio() ajusta o cardápio já em uso
   // sem apagar preços nem itens que o caixa cadastrou.
-  const CARDAPIO_V = 5;
+  const CARDAPIO_V = 6;
 
   // Preços das bebidas passados pelo Jean em 15/11/2026
   const PRECOS_BEBIDAS = {
@@ -172,6 +172,22 @@
       inserir((m) => m.cat === 'Ala-minuta', [
         Object.assign(novo('adic-ovo', 'Adicional de ovo', 'Adicionais'), { cozinha: true, preco: 2.5 }),
         Object.assign(novo('adic-carne', 'Adicional', 'Adicionais'), { cozinha: true, preco: 10, sab: ['Bife', 'Frango', 'Peixe', 'Chuleta'] })]);
+    }
+    if (de < 6) {
+      // O site no ar ainda tinha o cardápio de exemplo do primeiro dia (X-Salada, X-Bacon, X-Tudo…).
+      // Nesse caso troca pelo cardápio de verdade, guardando só os itens que o caixa cadastrou.
+      const EXEMPLO = ['xsalada', 'xbacon', 'xtudo', 'batata', 'cerveja-lata', 'cerveja-600', 'peixe', 'fritas', 'alaminuta', 'chopp', 'gelo'];
+      if (s.menu.some((m) => EXEMPLO.includes(m.id))) {
+        const fabrica = montarCardapio();
+        const ids = new Set(fabrica.map((m) => m.id));
+        const antigos = new Map(s.menu.map((m) => [m.id, m]));
+        const doCaixa = s.menu.filter((m) => !ids.has(m.id) && !EXEMPLO.includes(m.id) && /^[a-z0-9]{6}$/.test(m.id) && !/[-]/.test(m.id) && !['pastel', 'combo1', 'combo2'].includes(m.id));
+        fabrica.forEach((m) => {
+          const a = antigos.get(m.id);
+          if (a && !m.preco && a.preco > 0 && /^combo/.test(m.id)) m.preco = a.preco;
+        });
+        s.menu = fabrica.concat(doCaixa);
+      }
     }
     s.menuV = CARDAPIO_V;
     s.v = (s.v || 0) + 1;
