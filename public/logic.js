@@ -58,10 +58,10 @@
       it('picadao-m', 'Picadão médio', 'Porções', true),
       it('picadao-g', 'Picadão grande', 'Porções', true),
       it('porcao-peixe', 'Porção de peixe', 'Porções', true),
-      it('ala-carne', 'Ala-minuta de bife', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
-      it('ala-frango', 'Ala-minuta de frango', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
-      it('ala-peixe', 'Ala-minuta de peixe', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
-      it('ala-chuleta', 'Ala-minuta de chuleta', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
+      it('ala-carne', 'Ala-minuta de bife', 'Ala-minuta', true, INGREDIENTES.ala),
+      it('ala-frango', 'Ala-minuta de frango', 'Ala-minuta', true, INGREDIENTES.ala),
+      it('ala-peixe', 'Ala-minuta de peixe', 'Ala-minuta', true, INGREDIENTES.ala),
+      it('ala-chuleta', 'Ala-minuta de chuleta', 'Ala-minuta', true, INGREDIENTES.ala),
       it('adic-ovo', 'Adicional de ovo', 'Adicionais', true),
       it('adic-carne', 'Adicional', 'Adicionais', true, [], ADICIONAL),
       it('refri-2l', 'Refri 2 litros', 'Bebidas', false),
@@ -96,7 +96,7 @@
 
   // Versão do cardápio de fábrica. Ao subir, atualizarCardapio() ajusta o cardápio já em uso
   // sem apagar preços nem itens que o caixa cadastrou.
-  const CARDAPIO_V = 9;
+  const CARDAPIO_V = 10;
 
   // O que vai em cada lanche (vira os botões de "tirar ingrediente"). O pão não entra, porque não se tira.
   const INGREDIENTES = (() => {
@@ -105,6 +105,7 @@
       xis,
       esquinas: ['Carne', 'Frango', 'Calabresa', 'Coração', 'Bacon'].concat(xis),
       dog: ['Molho', 'Maionese', 'Milho', 'Ervilha', 'Batata palha', 'Salsicha'],
+      ala: ['Arroz', 'Batata frita', 'Ovo', 'Feijão', 'Salada'],
       torrada: ['Presunto', 'Queijo'],
       torradaOvo: ['Presunto', 'Queijo', 'Ovo', 'Alface']
     };
@@ -215,6 +216,10 @@
       // Combos a R$ 16,50; o combo 2 passa a ser pastel com café
       const c1 = acha('combo1'); if (c1) c1.preco = 16.5;
       const c2 = acha('combo2'); if (c2) { c2.preco = 16.5; c2.nome = 'Combo 2: Pastel + Café'; }
+    }
+    if (de < 10) {
+      // Ala-minuta: arroz, batata frita, ovo, feijão e salada, nessa ordem
+      ['ala-carne', 'ala-frango', 'ala-peixe', 'ala-chuleta'].forEach((id) => { const m = acha(id); if (m) m.ing = INGREDIENTES.ala.slice(); });
     }
     s.menuV = CARDAPIO_V;
     s.v = (s.v || 0) + 1;
