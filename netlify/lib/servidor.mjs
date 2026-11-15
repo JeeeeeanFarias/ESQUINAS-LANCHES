@@ -77,9 +77,9 @@ export function criarApi(store, env = {}) {
   });
   // Socorro para senha esquecida: a variável REDEFINIR_SENHAS (qualquer texto novo) devolve as senhas de fábrica uma vez
   const socorro = String(env.REDEFINIR_SENHAS || '');
-  const meta = (s) => ({ v: s.v, se: s.senhas.equipe, sg: s.senhas.gerente, rd: s.redefinido || '' });
+  const meta = (s) => ({ v: s.v, se: s.senhas.equipe, sg: s.senhas.gerente, rd: s.redefinido || '', mv: s.menuV || 1 });
 
-  async function carregar() {
+  async function carregar(tentativa = 0) {
     let r = await store.getWithMetadata('estado', { type: 'json' });
     if (!r) {
       const novo = L.seed();
@@ -87,8 +87,15 @@ export function criarApi(store, env = {}) {
       await store.setJSON('estado', novo, { onlyIfNew: true, metadata: meta(novo) });
       r = await store.getWithMetadata('estado', { type: 'json' });
     }
+    const cardapioAntes = r.data.menuV || 1;
     const s = L.migrar(r.data);
     if (!s.senhas || !s.senhas.equipe || !s.senhas.gerente) s.senhas = senhasIniciais();
+    // O cardápio de fábrica mudou: grava já, para todos os aparelhos receberem a novidade
+    if (s.menuV !== cardapioAntes && tentativa < 3) {
+      if (socorro && s.redefinido !== socorro) { s.senhas = senhasIniciais(); s.redefinido = socorro; }
+      await store.setJSON('estado', s, { onlyIfMatch: r.etag, metadata: meta(s) });
+      return carregar(tentativa + 1);
+    }
     if (socorro && s.redefinido !== socorro) {
       s.senhas = senhasIniciais();
       s.redefinido = socorro;
@@ -103,6 +110,7 @@ export function criarApi(store, env = {}) {
       const m = r && r.metadata;
       if (!m || !m.sg || !m.se || typeof m.v !== 'number') return null;
       if (socorro && m.rd !== socorro) return null;
+      if (m.mv !== L.CARDAPIO_V) return null; // cardápio de fábrica mudou: carrega e atualiza
       return m;
     } catch (e) {
       return null;

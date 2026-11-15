@@ -19,6 +19,7 @@
       equipe: ['Jean', 'Eliane', 'Alauri'],
       codes: {},
       menu: montarCardapio(),
+      menuV: CARDAPIO_V,
       contas: [],
       pedidos: [],
       turno: null,
@@ -41,6 +42,7 @@
       it('pastel', 'Pastel', 'Pastéis', true, [], PASTEL),
       it('combo1', 'Combo 1: Pastel + Refri 220 ml', 'Pastéis', true, [], PASTEL),
       it('combo2', 'Combo 2: Pastel + Suco 220 ml', 'Pastéis', true, [], PASTEL),
+      it('risoles', 'Risoles', 'Pastéis', true),
       it('xis-carne', 'Xis Carne', 'Xis', true, base),
       it('xis-frango', 'Xis Frango', 'Xis', true, base),
       it('xis-calabresa', 'Xis Calabresa', 'Xis', true, base),
@@ -54,29 +56,84 @@
       it('picadao-m', 'Picadão médio', 'Porções', true),
       it('picadao-g', 'Picadão grande', 'Porções', true),
       it('porcao-peixe', 'Porção de peixe', 'Porções', true),
-      it('risoles', 'Risoles', 'Porções', true),
-      it('ala-carne', 'Ala-minuta de carne', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
+      it('ala-carne', 'Ala-minuta de bife', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
       it('ala-frango', 'Ala-minuta de frango', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
       it('ala-peixe', 'Ala-minuta de peixe', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
       it('ala-chuleta', 'Ala-minuta de chuleta', 'Ala-minuta', true, ['Arroz', 'Feijão', 'Ovo', 'Salada', 'Batata frita']),
       it('refri-2l', 'Refri 2 litros', 'Bebidas', false),
+      it('charrua-2l', 'Guaraná Charrua 2 litros', 'Bebidas', false),
       it('refri-lata', 'Refri lata', 'Bebidas', false),
       it('suco', 'Suco', 'Bebidas', false),
       it('agua', 'Água', 'Bebidas', false),
       it('cafe', 'Café', 'Bebidas', false),
+      it('baly', 'Baly', 'Energéticos', false),
+      it('monster', 'Monster', 'Energéticos', false),
       it('schin-1l', 'Schin 1 litro', 'Cervejas', false),
-      it('skol-1l', 'Skol 1 litro', 'Cervejas', false),
       it('polar-1l', 'Polar 1 litro', 'Cervejas', false),
-      it('schin-lata', 'Schin lata', 'Cervejas', false),
-      it('skol-lata', 'Skol lata', 'Cervejas', false),
-      it('polar-lata', 'Polar lata', 'Cervejas', false),
+      it('bud-1l', 'Budweiser 1 litro', 'Cervejas', false),
+      it('original-latao', 'Original latão', 'Latão', false),
+      it('heineken-latao', 'Heineken latão', 'Latão', false),
+      it('bud-latao', 'Budweiser latão', 'Latão', false),
+      it('polar-latao', 'Polar latão', 'Latão', false),
+      it('brahma-latao', 'Brahma latão', 'Latão', false),
+      it('schin-latao', 'Schin latão', 'Latão', false),
+      it('amstel-latao', 'Amstel latão', 'Latão', false),
+      it('heineken-ln', 'Heineken long neck', 'Long neck', false),
+      it('bud-ln', 'Budweiser long neck', 'Long neck', false),
+      it('skol-beats', 'Skol Beats', 'Long neck', false),
+      it('ice', 'Ice', 'Long neck', false),
       it('chopp-taca', 'Chopp em taça', 'Chopp', false),
       it('chopp-torre', 'Torre de chopp', 'Chopp', false),
       it('capeta-m', 'Capeta médio', 'Capeta', false, [], CAPETA),
-      it('capeta-g', 'Capeta grande', 'Capeta', false, [], CAPETA),
-      it('halls-m', 'Drink Halls médio', 'Capeta', false),
-      it('halls-g', 'Drink Halls grande', 'Capeta', false)
+      it('capeta-g', 'Capeta grande', 'Capeta', false, [], CAPETA)
     ];
+  }
+
+  // Versão do cardápio de fábrica. Ao subir, atualizarCardapio() ajusta o cardápio já em uso
+  // sem apagar preços nem itens que o caixa cadastrou.
+  const CARDAPIO_V = 2;
+
+  function atualizarCardapio(s) {
+    const de = s.menuV || 1;
+    if (de >= CARDAPIO_V) return false;
+    const novo = (id, nome, cat) => ({ id, nome, cat, preco: 0, cozinha: false, ativo: true, ing: [], sab: [] });
+    const acha = (id) => s.menu.find((m) => m.id === id);
+    // Põe os itens depois do último item da categoria "ancora" (ou no fim), sem duplicar
+    const inserir = (ancora, itens) => {
+      itens = itens.filter((n) => !acha(n.id));
+      if (!itens.length) return;
+      let pos = -1;
+      s.menu.forEach((m, i) => { if (ancora(m)) pos = i; });
+      if (pos < 0) s.menu.push(...itens); else s.menu.splice(pos + 1, 0, ...itens);
+    };
+    if (de < 2) {
+      // Novembro de 2026: risoles junto dos pastéis, ala-minuta de bife, Guaraná Charrua,
+      // energéticos, cervejas só de litro, latão e long neck, sem Drink Halls
+      const ris = acha('risoles');
+      if (ris && ris.cat === 'Porções') {
+        ris.cat = 'Pastéis';
+        s.menu = s.menu.filter((m) => m !== ris);
+        inserir((m) => m.cat === 'Pastéis', [ris]);
+      }
+      const ala = acha('ala-carne');
+      if (ala && ala.nome === 'Ala-minuta de carne') ala.nome = 'Ala-minuta de bife';
+      const fora = ['skol-1l', 'schin-lata', 'skol-lata', 'polar-lata', 'halls-m', 'halls-g'];
+      s.menu = s.menu.filter((m) => !fora.includes(m.id));
+      inserir((m) => m.id === 'refri-2l', [novo('charrua-2l', 'Guaraná Charrua 2 litros', 'Bebidas')]);
+      inserir((m) => m.cat === 'Bebidas', [novo('baly', 'Baly', 'Energéticos'), novo('monster', 'Monster', 'Energéticos')]);
+      inserir((m) => m.cat === 'Cervejas', [novo('bud-1l', 'Budweiser 1 litro', 'Cervejas')]);
+      inserir((m) => m.cat === 'Cervejas', [
+        novo('original-latao', 'Original latão', 'Latão'), novo('heineken-latao', 'Heineken latão', 'Latão'),
+        novo('bud-latao', 'Budweiser latão', 'Latão'), novo('polar-latao', 'Polar latão', 'Latão'),
+        novo('brahma-latao', 'Brahma latão', 'Latão'), novo('schin-latao', 'Schin latão', 'Latão'),
+        novo('amstel-latao', 'Amstel latão', 'Latão')]);
+      inserir((m) => m.cat === 'Latão', [
+        novo('heineken-ln', 'Heineken long neck', 'Long neck'), novo('bud-ln', 'Budweiser long neck', 'Long neck'),
+        novo('skol-beats', 'Skol Beats', 'Long neck'), novo('ice', 'Ice', 'Long neck')]);
+    }
+    s.menuV = CARDAPIO_V;
+    s.v = (s.v || 0) + 1;
+    return true;
   }
 
   function garantirCodigos(s) {
@@ -95,6 +152,7 @@
     // O registro guarda só cancelamentos e correções (é o que aparece no relatório)
     s.log = (s.log || []).filter((l) => l.tipo === 'cancel').slice(0, 300);
     s.menu = (s.menu || []).map((m) => Object.assign({ sab: [], ing: [] }, m));
+    atualizarCardapio(s);
     const tid = s.turno ? s.turno.id : null;
     s.contas.forEach((c) => {
       c.itens = c.itens || [];
@@ -426,6 +484,6 @@
   }
 
   const TIPOS = Object.keys(H);
-  root.Logic = { FORMAS, TIPOS, rnd, seed, migrar, apply, relatorio, publicoMesa, vivos, total, pago, restante,
+  root.Logic = { CARDAPIO_V, FORMAS, TIPOS, rnd, seed, migrar, apply, relatorio, publicoMesa, vivos, total, pago, restante,
     rotulo, contaDaMesa, ehBalcao, brl, garantirCodigos };
 })(typeof window !== 'undefined' ? window : globalThis);
