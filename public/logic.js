@@ -58,7 +58,8 @@
       it('batata-g', 'Batata frita grande', 'Porções', true),
       it('picadao-m', 'Picadão médio', 'Porções', true),
       it('picadao-g', 'Picadão grande', 'Porções', true),
-      it('porcao-peixe', 'Porção de peixe', 'Porções', true),
+      it('porcao-peixe', 'Porção de peixe média', 'Porções', true),
+      it('porcao-peixe-g', 'Porção de peixe grande', 'Porções', true),
       it('ala-carne', 'Ala-minuta de bife', 'Ala-minuta', true, INGREDIENTES.ala),
       it('ala-frango', 'Ala-minuta de frango', 'Ala-minuta', true, INGREDIENTES.ala),
       it('ala-peixe', 'Ala-minuta de peixe', 'Ala-minuta', true, INGREDIENTES.ala),
@@ -97,7 +98,7 @@
 
   // Versão do cardápio de fábrica. Ao subir, atualizarCardapio() ajusta o cardápio já em uso
   // sem apagar preços nem itens que o caixa cadastrou.
-  const CARDAPIO_V = 11;
+  const CARDAPIO_V = 12;
 
   // O que vai em cada lanche (vira os botões de "tirar ingrediente"). O pão não entra, porque não se tira.
   const INGREDIENTES = (() => {
@@ -123,11 +124,11 @@
   };
   // Preços das comidas, da mesma data
   const PRECOS_COMIDAS = {
-    pastel: 13, risoles: 13, combo1: 16.5, combo2: 16.5,
-    'xis-carne': 25, 'xis-frango': 25, 'xis-calabresa': 25, 'xis-coracao': 29, 'xis-bacon': 28, 'xis-esquinas': 38,
+    pastel: 13, risoles: 11, combo1: 16.5, combo2: 16.5,
+    'xis-carne': 25, 'xis-frango': 25, 'xis-calabresa': 25, 'xis-coracao': 30, 'xis-bacon': 28, 'xis-esquinas': 38,
     dog: 20, torrada: 15, 'torrada-ovo': 17,
-    'batata-m': 39, 'batata-g': 49, 'picadao-m': 120, 'picadao-g': 145, 'porcao-peixe': 89,
-    'ala-carne': 29.9, 'ala-frango': 29.9, 'ala-peixe': 39, 'ala-chuleta': 29.9,
+    'batata-m': 40, 'batata-g': 50, 'picadao-m': 130, 'picadao-g': 150, 'porcao-peixe': 60, 'porcao-peixe-g': 90,
+    'ala-carne': 29, 'ala-frango': 29, 'ala-peixe': 40, 'ala-chuleta': 29,
     'adic-ovo': 2.5, 'adic-carne': 10
   };
 
@@ -227,6 +228,14 @@
       let andre = s.equipe.find((n) => /^andr[eé]$/i.test(String(n).trim()));
       if (!andre) { andre = 'André'; s.equipe.push(andre); }
       s.soGarcom = Array.from(new Set((s.soGarcom || []).concat(andre)));
+    }
+    if (de < 12) {
+      // Preços conferidos na folha do Jean (20/11/2026). A porção de peixe passa a ter média e grande.
+      const peixe = acha('porcao-peixe');
+      if (peixe && peixe.nome === 'Porção de peixe') peixe.nome = 'Porção de peixe média';
+      inserir((m) => m.id === 'porcao-peixe', [Object.assign(novo('porcao-peixe-g', 'Porção de peixe grande', 'Porções'), { cozinha: true })]);
+      ['pastel', 'risoles', 'xis-coracao', 'batata-m', 'batata-g', 'picadao-m', 'picadao-g', 'porcao-peixe', 'porcao-peixe-g',
+        'ala-carne', 'ala-frango', 'ala-peixe', 'ala-chuleta'].forEach((id) => { const m = acha(id); if (m) m.preco = PRECOS_COMIDAS[id]; });
     }
     s.menuV = CARDAPIO_V;
     s.v = (s.v || 0) + 1;
