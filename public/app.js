@@ -339,7 +339,7 @@
     const cfg = S && S.cfg;
     const portas = [
       ['garcom', 'Garçom', 'Lançar pedidos nas mesas e no balcão', 'Celular', true],
-      ['cozinha', 'Cozinha', 'Pedidos chegando: novo, preparando e pronto', 'Tablet ou celular na parede'],
+      ['cozinha', 'Cozinha', 'Pedidos chegando: novo, preparando e pronto', 'TV ligada ao notebook'],
       ['caixa', 'Caixa', 'Contas, pagamentos, cardápio e relatório', 'Notebook'],
       ['cartoes', 'Cartões das mesas', 'QR Codes prontos para a gráfica', '10 × 15 cm']
     ];
@@ -557,23 +557,35 @@
       const itens = itensDoPedido(p);
       const min = minDesde(p.em);
       const tarde = p.status !== 'pronto' && min >= 15;
-      const prox = { novo: ['preparando', 'Começar a preparar'], preparando: ['pronto', 'Marcar pronto'], pronto: ['entregue', 'Entregue'] }[p.status];
+      const prox = { novo: ['preparando', 'Começar'], preparando: ['pronto', 'Pronto'], pronto: ['entregue', 'Entregue'] }[p.status];
       const volta = { preparando: 'novo', pronto: 'preparando' }[p.status];
-      return `<article class="comanda ${tarde ? 'atraso' : ''}">
-        <div class="comanda-cab"><b>${esc(c ? L.rotulo(c) : p.rotulo)}</b><span class="muted">${esc(p.por)} · ${hora(p.em)}</span><span class="tempo ${tarde ? 'tarde' : ''}">${tempo(p.em)}</span></div>
+      const nomeMesa = c ? L.rotulo(c) : p.rotulo;
+      return `<article class="comanda ${p.status} ${tarde ? 'atraso' : ''}">
+        <div class="comanda-cab"><b class="mesa-nome">${esc(nomeMesa)}</b><span class="tempo ${tarde ? 'tarde' : ''}">${tempo(p.em)}</span></div>
+        <div class="comanda-sub">${esc(p.por)} · ${hora(p.em)}</div>
         <ul>${itens.map((i) => `<li><b>${i.qtd}× ${esc(i.nome)}</b>${i.sem.length ? `<span class="sem">SEM ${esc(i.sem.join(', ').toUpperCase())}</span>` : ''}${i.obs ? `<span class="obs">${esc(i.obs)}</span>` : ''}</li>`).join('')}</ul>
         <div class="acoes"><button class="btn pri" data-act="statusPed" data-p="${p.id}" data-s="${prox[0]}">${prox[1]}</button>
           <button class="btn" data-act="imprimirPed" data-p="${p.id}">Imprimir</button>
           ${volta ? `<button class="btn leve" data-act="statusPed" data-p="${p.id}" data-s="${volta}">Voltar</button>` : ''}</div></article>`;
     };
-    return `${topo('Cozinha')}<main class="wrap">
-      <div class="secao-cab" style="padding-top:14px"><span class="muted">Mostra só lanches e comidas. Bebidas ficam com o garçom.</span><span class="esp"></span>
-        <button class="btn mini ${ui.som ? 'escuro' : 'pri'}" data-act="som">${ui.som ? 'Som ligado' : 'Ligar som de aviso'}</button></div>
+    const agora = new Date();
+    const relogio = `${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
+    const ativos = S.pedidos.filter((p) => p.status === 'novo' || p.status === 'preparando').length;
+    return `<div class="tv">
+      <header class="tv-topo">
+        <button class="marca" data-act="ir" data-t="inicio" aria-label="Voltar ao início">${logoHtml(S && S.cfg, 'sm')}<span>${esc((S && S.cfg.nome) || NOME_PADRAO)}</span></button>
+        <span class="tv-t">Cozinha</span>
+        <span class="tv-resumo">${ativos ? `${ativos} pedido${ativos > 1 ? 's' : ''} na fila` : 'Nenhum pedido na fila'}</span>
+        <span class="esp"></span>
+        <button class="btn mini ${ui.som ? 'escuro' : 'pri'}" data-act="som">${ui.som ? 'Som ligado' : 'Ligar som de aviso'}</button>
+        <button class="btn mini" data-act="telaCheia">Tela cheia</button>
+        <span class="tv-hora">${relogio}</span>
+      </header>${faixaOff()}${faixaDemo()}
       <div class="coz">${cols.map(([st, nome]) => {
         const ps = S.pedidos.filter((p) => p.status === st).sort((a, b) => a.em - b.em);
         return `<section class="col col-${st}"><div class="col-cab"><h2>${nome}</h2><span class="n">${ps.length}</span></div>
-          ${ps.map(comanda).join('') || '<p class="muted vazio">Nada aqui.</p>'}</section>`;
-      }).join('')}</div></main>`;
+          <div class="col-lista">${ps.map(comanda).join('') || '<p class="vazio">Nada aqui.</p>'}</div></section>`;
+      }).join('')}</div></div>`;
   }
 
   /* ---------- Caixa ---------- */
@@ -856,7 +868,7 @@
     return vInicio();
   }
   function gFolhaCaixa() { return ui.g.sheet && (ui.g.sheet.tipo === 'balcao' || (ui.g.sheet.tipo === 'item' && noBalcao())) ? gFolha() : ''; }
-  const ROLAVEIS = '.folha, .cats, .abas, .tabela-wrap';
+  const ROLAVEIS = '.folha, .cats, .abas, .tabela-wrap, .col-lista';
   let vistaAnterior = '';
   function render() {
     const app = $('#app');
@@ -871,6 +883,7 @@
     const rolagem = Array.from(app.querySelectorAll(ROLAVEIS)).map((el) => [el.scrollTop, el.scrollLeft]);
     const chave = [tela, ui.g.vista, ui.cx.tab, ui.g.sheet ? ui.g.sheet.tipo + (ui.g.sheet.k || '') : '', ui.previa ? 'p' : ''].join('|');
     app.innerHTML = vista() + (S ? vPrevia() : '');
+    document.body.classList.toggle('tela-cozinha', !!app.querySelector('.tv'));
     Object.keys(vals).forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -1034,6 +1047,12 @@
       if (t) imprimir(ticketResumo(t, t.resumo));
     },
     som() { ui.som = !ui.som; if (ui.som) bip(1); render(); },
+    telaCheia() {
+      try {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else document.documentElement.requestFullscreen();
+      } catch (e) { toast('Aperte F11 para tela cheia.', 'ok'); }
+    },
     fecharPrevia(d, el, e) { if (e.target === el || el.tagName === 'BUTTON') { ui.previa = null; render(); } },
     // caixa
     aba(d) { ui.cx.tab = d.t; ui.cx.edit = null; ui.cx.conf = null; ui.cx.confFechar = false; if (d.t === 'relatorio') carregarTurnos(); window.scrollTo(0, 0); render(); },

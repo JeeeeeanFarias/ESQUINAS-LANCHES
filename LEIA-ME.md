@@ -9,7 +9,7 @@ Endereço: **https://esquinaslanches.netlify.app**
 | Endereço | Para quem | Aparelho | Senha |
 |---|---|---|---|
 | `/#garcom` | Garçom: vê o cardápio e anota os pedidos | Celular | da equipe |
-| `/#cozinha` | Cozinha: vê os pedidos e marca o andamento | Tablet ou celular na parede | da equipe |
+| `/#cozinha` | Cozinha: vê os pedidos e marca o andamento | TV ligada ao notebook | da equipe |
 | `/#caixa` | Caixa: abre e fecha o caixa, recebe, cardápio, relatório | Notebook | do gerente |
 | `/#cartoes` | Gera os cartões com QR Code para a gráfica | Notebook | do gerente |
 | `/?m=código` | Cliente (o QR Code da mesa leva aqui) | Celular do cliente | nenhuma |
@@ -32,6 +32,17 @@ Em **Caixa → Ajustes → Equipe**, o botão **Deixar só garçom** limita uma 
 Cada pessoa escolhe o próprio nome ao entrar, sem senha individual. Por isso a trava de verdade continua sendo a **senha do gerente**: não passe ela para quem é só garçom.
 
 **Se esquecer a senha do gerente:** no Netlify, abra **Site configuration → Environment variables** e crie a variável `REDEFINIR_SENHAS` com um texto qualquer (por exemplo, a data de hoje). Depois vá em **Deploys → Trigger deploy**. As duas senhas voltam às de fábrica **uma única vez**, sem apagar nada, e o caixa pede para criar uma senha nova. Se precisar de novo no futuro, troque o texto da variável.
+
+## Cozinha na TV
+
+A tela da cozinha foi feita para TV: fundo escuro, nome da mesa e dos lanches em letras grandes, "SEM ..." em vermelho e observações em destaque. Os tamanhos acompanham a tela, então não precisa ajustar nada.
+
+1. No notebook ligado à TV, abra `/#cozinha`, entre com a senha da equipe e escolha o nome de quem está na cozinha.
+2. Clique em **Tela cheia** (ou aperte F11) e em **Ligar som de aviso**. O navegador só libera o som depois de um clique, então faça isso uma vez toda vez que abrir a página.
+3. Pronto: os pedidos aparecem sozinhos, o mais antigo em cima. Pedido com mais de 15 minutos fica com borda vermelha.
+4. Nas configurações de energia do notebook, deixe **nunca suspender** e **não desligar a tela com a tampa fechada**. A tela do site também pede ao navegador para não apagar.
+
+Na cozinha, é só tocar **Começar** quando iniciar e **Pronto** quando terminar. O garçom é avisado no celular.
 
 ## O dia a dia
 
