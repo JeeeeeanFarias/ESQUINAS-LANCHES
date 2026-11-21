@@ -458,9 +458,9 @@
       <div class="det">${i.sem.length ? `<span class="sem">sem ${esc(i.sem.join(', ').toLowerCase())}</span>` : ''}${i.obs ? `<span>“${esc(i.obs)}”</span>` : ''}
         ${p && !i.canc && p.status !== 'cancelado' ? `<span class="st ${p.status}">${{ novo: 'na fila', preparando: 'preparando', pronto: 'pronto', entregue: 'entregue' }[p.status]}</span>` : ''}
         <span>${esc(i.por)} · ${hora(i.em)}</span>
-        ${i.canc ? `<span>cancelado por ${esc(i.canc.por)}</span>` : ''}
-        ${permiteCancelar && !i.canc && !conf ? `<button class="btn mini leve" data-act="pedirCancel" data-i="${i.id}">Cancelar item</button>` : ''}</div>
-      ${conf && !i.canc ? `<div class="conf"><span>Cancelar ${i.qtd}× ${esc(i.nome)}?</span><span class="esp"></span><button class="btn mini perigo" data-act="cancelarItem" data-c="${c.id}" data-i="${i.id}">Sim, cancelar</button><button class="btn mini" data-act="naoCancel">Não</button></div>` : ''}
+        ${i.canc ? `<span>removido por ${esc(i.canc.por)}</span>` : ''}
+        ${permiteCancelar && !i.canc && !conf ? `<button class="btn mini remover" data-act="pedirCancel" data-i="${i.id}">Remover item</button>` : ''}</div>
+      ${conf && !i.canc ? `<div class="conf"><span>Remover ${i.qtd}× ${esc(i.nome)} da conta?${p && (p.status === 'preparando' || p.status === 'pronto') ? ' <b>A cozinha já começou a fazer.</b>' : ''}</span><span class="esp"></span><button class="btn mini perigo" data-act="cancelarItem" data-c="${c.id}" data-i="${i.id}">Sim, remover</button><button class="btn mini" data-act="naoCancel">Não</button></div>` : ''}
     </div>`;
   }
   function listaItens(c, permiteCancelar) {
@@ -523,7 +523,7 @@
       h = `<div class="folha-cab"><h2 id="folha-t">Pedido · ${esc(rotuloAlvo())}</h2><button class="btn mini" data-act="fecharFolha">Continuar escolhendo</button></div>
         <div class="itens carrinho">${ui.g.cart.map((x) => `<div class="item"><span class="n">${x.qtd}× ${esc(x.nome)}</span><span class="valor">${brl(x.qtd * x.preco)}</span>
           <div class="det">${x.sem.length ? `<span class="sem">sem ${esc(x.sem.join(', ').toLowerCase())}</span>` : ''}${x.obs ? `<span>“${esc(x.obs)}”</span>` : ''}
-          <span class="esp"></span><button class="btn mini" data-act="cartQtd" data-k="${x.k}" data-d="-1" aria-label="Menos">−</button><button class="btn mini" data-act="cartQtd" data-k="${x.k}" data-d="1" aria-label="Mais">+</button></div></div>`).join('')}
+          <span class="esp"></span><button class="btn mini remover" data-act="cartRem" data-k="${x.k}">Remover</button><button class="btn mini" data-act="cartQtd" data-k="${x.k}" data-d="-1" aria-label="Menos">−</button><button class="btn mini" data-act="cartQtd" data-k="${x.k}" data-d="1" aria-label="Mais">+</button></div></div>`).join('')}
           <div class="totais"><div class="grande"><span>Este pedido</span><span>${brl(tot)}</span></div></div></div>
         <button class="btn pri grande cheio" data-act="enviar">Enviar pedido</button>
         <button class="btn leve" data-act="limparCart">Descartar pedido</button>`;
@@ -766,7 +766,7 @@
         <div class="secao-cab"><h2>Venda</h2><span class="esp"></span>${cart.length ? '<button type="button" class="btn mini leve" data-act="vrLimpar">Limpar</button>' : ''}</div>
         ${cart.length ? `<div class="itens carrinho">${cart.map((x) => `<div class="item"><span class="n">${x.qtd}× ${esc(x.nome)}</span><span class="valor">${brl(x.qtd * x.preco)}</span>
           <div class="det">${x.sem.length ? `<span class="sem">sem ${esc(x.sem.join(', ').toLowerCase())}</span>` : ''}${x.obs ? `<span>“${esc(x.obs)}”</span>` : ''}
-          <span class="esp"></span><button type="button" class="btn mini" data-act="cartQtd" data-k="${x.k}" data-d="-1" aria-label="Menos">−</button><button type="button" class="btn mini" data-act="cartQtd" data-k="${x.k}" data-d="1" aria-label="Mais">+</button></div></div>`).join('')}</div>`
+          <span class="esp"></span><button type="button" class="btn mini remover" data-act="cartRem" data-k="${x.k}">Remover</button><button type="button" class="btn mini" data-act="cartQtd" data-k="${x.k}" data-d="-1" aria-label="Menos">−</button><button type="button" class="btn mini" data-act="cartQtd" data-k="${x.k}" data-d="1" aria-label="Mais">+</button></div></div>`).join('')}</div>`
           : '<div class="itens"><p class="vazio">Toque nos itens à esquerda para montar a venda.</p></div>'}
         <div class="restante"><span>Total</span><b>${brl(tot)}</b></div>
         <label class="campo"><span>Nome do cliente <small>(opcional, aparece na cozinha)</small></span><input id="vr-nome" type="text" maxlength="40" autocomplete="off" placeholder="Ex.: Carlos"></label>
@@ -986,6 +986,15 @@
       addCart(m, f.qtd, f.sem.slice(), obs.trim(), f.sab);
       ui.g.sheet = null; if (!noBalcao()) toast(`+${f.qtd} ${m.nome}${f.sab ? ' – ' + f.sab : ''}`); render();
     },
+    cartRem(d) {
+      const cart = carrinho();
+      const x = cart.find((y) => y.k === d.k);
+      if (!x) return;
+      cart.splice(cart.indexOf(x), 1);
+      toast('Item removido do pedido.');
+      if (!cart.length && !noBalcao()) ui.g.sheet = null;
+      render();
+    },
     cartQtd(d) {
       const cart = carrinho();
       const x = cart.find((y) => y.k === d.k);
@@ -1023,8 +1032,8 @@
       ui.g.conf = null; ui.cx.conf = null;
       if (!(await fazer('cancelarItem', { conta: d.c, item: d.i }))) return;
       const c = contaPorId(d.c);
-      if (c && c.aberta) { toast('Item cancelado.'); return; }
-      toast('Item cancelado. A conta ficou sem itens e foi fechada.');
+      if (c && c.aberta) { toast('Item removido da conta.'); return; }
+      toast('Item removido. A conta ficou sem itens e foi fechada.');
       if (tela === 'garcom') { ui.g.vista = 'mesas'; ui.g.alvo = null; } else ui.cx.sel = null;
       render();
     },

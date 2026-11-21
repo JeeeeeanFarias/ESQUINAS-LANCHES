@@ -53,7 +53,7 @@ Na cozinha, é só tocar **Começar** quando iniciar e **Pronto** quando termina
 5. Venda no balcão, paga na hora: aba **Balcão**.
 6. **Fechar o caixa** no fim, mesmo que seja de madrugada. O resumo fica em **Relatório → Caixas anteriores** e pode ser impresso.
 
-Cancelamentos e pagamentos removidos ficam registrados com o nome de quem fez.
+**Item lançado errado:** antes de enviar, toque em **Remover** na linha do item, em *Ver pedido*. Depois de enviado, abra a conta da mesa e toque em **Remover item**. O sistema pergunta antes e avisa se a cozinha já começou a fazer. Itens e pagamentos removidos ficam registrados com o nome de quem fez.
 
 ## Preços
 
